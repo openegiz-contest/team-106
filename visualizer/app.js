@@ -39,16 +39,16 @@ const BENCHES = [
   { elev: 260, toe: 100, crest: 0,   name: "Дно карьера (+260м)", rockColor: 0x2b3848 }
 ];
 
-// Geological Ore Blocks (8 blocks)
+// Geological Ore Mining Faces & Grade Blocks (8 blocks across benches)
 const ORE_BLOCKS_DEF = {
-  "block-01": { id: "block-01", name: "Б-420-1 (Богатая)", elev: 420, grade: 1.65, color: 0xd500f9, offset: 0.95, width: 0.55 },
-  "block-02": { id: "block-02", name: "Б-420-2 (Рядовая)", elev: 420, grade: 1.10, color: 0xff9100, offset: 3.60, width: 1.10 },
-  "block-03": { id: "block-03", name: "Б-380-1 (Высокосортная)", elev: 380, grade: 1.85, color: 0xe040fb, offset: 1.25, width: 0.60 },
-  "block-04": { id: "block-04", name: "Б-380-2 (Бедная)", elev: 380, grade: 0.65, color: 0x5c6bc0, offset: 3.90, width: 1.30 },
-  "block-05": { id: "block-05", name: "Б-340-1 (Целевая)", elev: 340, grade: 1.05, color: 0x00e676, offset: 1.55, width: 0.80 },
-  "block-06": { id: "block-06", name: "Б-340-2 (Низкосортная)", elev: 340, grade: 0.50, color: 0x3949ab, offset: 4.10, width: 1.40 },
-  "block-07": { id: "block-07", name: "Б-300-1 (Глубокая)", elev: 300, grade: 1.45, color: 0xab47bc, offset: 1.90, width: 1.00 },
-  "block-08": { id: "block-08", name: "Б-260 (Вскрыша)", elev: 260, grade: 0.12, color: 0x78909c, offset: 0.00, width: 6.28 }
+  "block-01": { id: "block-01", name: "Б-420-1", typeName: "Богатая руда", elev: 420, grade: 1.65, color: 0xd500f9, offset: 0.95, width: 0.55, excavator: "ЭКГ-15 №1" },
+  "block-02": { id: "block-02", name: "Б-420-2", typeName: "Рядовая руда", elev: 420, grade: 1.10, color: 0xff9100, offset: 3.60, width: 1.10, excavator: null },
+  "block-03": { id: "block-03", name: "Б-380-1", typeName: "Высокосортная руда", elev: 380, grade: 1.85, color: 0xe040fb, offset: 1.25, width: 0.60, excavator: "ЭКГ-15 №2" },
+  "block-04": { id: "block-04", name: "Б-380-2", typeName: "Бедная руда", elev: 380, grade: 0.65, color: 0x5c6bc0, offset: 3.90, width: 1.30, excavator: null },
+  "block-05": { id: "block-05", name: "Б-340-1", typeName: "Целевая рядовая", elev: 340, grade: 1.05, color: 0x00e676, offset: 1.55, width: 0.80, excavator: "ЭКГ-15 №3" },
+  "block-06": { id: "block-06", name: "Б-340-2", typeName: "Низкосортная руда", elev: 340, grade: 0.50, color: 0x3949ab, offset: 4.10, width: 1.40, excavator: null },
+  "block-07": { id: "block-07", name: "Б-300-1", typeName: "Глубокая руда", elev: 300, grade: 1.45, color: 0xab47bc, offset: 1.90, width: 1.00, excavator: "ЭКГ-15 №4" },
+  "block-08": { id: "block-08", name: "Б-260",   typeName: "Вскрышные породы", elev: 260, grade: 0.12, color: 0x78909c, offset: 0.00, width: 6.28, excavator: null }
 };
 
 // --- Global Three.js State ---
@@ -937,49 +937,213 @@ function buildFacilities() {
 }
 
 // --- 4. Geological Ore Blocks in Face ---
+// --- 4. High-DPI Billboard Placard for Mining Faces & Ore Blocks ---
+function createMiningFaceSprite(b) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 180;
+  const ctx = canvas.getContext("2d");
+
+  const hexColor = `#${b.color.toString(16).padStart(6, '0')}`;
+
+  // Dark slate rounded container with subtle gradient
+  const bgGrad = ctx.createLinearGradient(0, 0, 0, 180);
+  bgGrad.addColorStop(0, "rgba(8, 14, 28, 0.94)");
+  bgGrad.addColorStop(1, "rgba(4, 8, 16, 0.98)");
+  ctx.fillStyle = bgGrad;
+  ctx.beginPath();
+  ctx.roundRect(8, 8, 496, 164, 20);
+  ctx.fill();
+
+  // Highwall border glow in ore grade color
+  ctx.strokeStyle = hexColor;
+  ctx.lineWidth = 5;
+  ctx.stroke();
+
+  // Pickaxe badge icon
+  ctx.fillStyle = hexColor;
+  ctx.beginPath();
+  ctx.arc(46, 52, 20, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.font = "24px sans-serif";
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText("⛏️", 33, 60);
+
+  // Header: ЗАБОЙ Б-420-1 (+420м)
+  ctx.font = "bold 32px 'Inter', sans-serif";
+  ctx.fillStyle = "#f0f4fc";
+  ctx.fillText(`ЗАБОЙ: ${b.name} (+${b.elev}м)`, 78, 48);
+
+  // Subtitle: Сорт руды и процент Cu
+  ctx.font = "bold 24px 'JetBrains Mono', monospace";
+  ctx.fillStyle = hexColor;
+  ctx.fillText(`${b.typeName} • ${b.grade}% Cu`, 78, 86);
+
+  // Status badge pill: Active Excavator vs Reserve Face
+  if (b.excavator) {
+    ctx.fillStyle = "rgba(0, 230, 118, 0.22)";
+    ctx.beginPath();
+    ctx.roundRect(24, 108, 464, 50, 10);
+    ctx.fill();
+    ctx.strokeStyle = "#00e676";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.font = "bold 21px 'Inter', sans-serif";
+    ctx.fillStyle = "#00e676";
+    ctx.fillText(`⚡ ${b.excavator} • АКТИВНАЯ ПОГРУЗКА`, 48, 140);
+  } else {
+    ctx.fillStyle = "rgba(41, 121, 255, 0.16)";
+    ctx.beginPath();
+    ctx.roundRect(24, 108, 464, 50, 10);
+    ctx.fill();
+    ctx.strokeStyle = "#2979ff";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.font = "bold 21px 'Inter', sans-serif";
+    ctx.fillStyle = "#82b1ff";
+    ctx.fillText(`💤 РЕЗЕРВНЫЙ ЗАБОЙ ШИХТОВКИ`, 58, 140);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  const spriteMat = new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true });
+  const sprite = new THREE.Sprite(spriteMat);
+  sprite.scale.set(27, 9.5, 1);
+  return sprite;
+}
+
+// --- 4. Geological Ore Mining Faces (Рудные забои с отбитой рудой) ---
 function buildOreBlocks() {
   blocksGroup.clear();
 
   Object.values(ORE_BLOCKS_DEF).forEach(b => {
     const bench = BENCHES.find(bn => bn.elev === b.elev);
-    if (!bench || b.crest === 0) return;
+    if (!bench) return;
 
-    const rMid = (bench.toe + bench.crest) * 0.5;
+    const rMid = bench.crest > 0 ? (bench.toe + bench.crest) * 0.5 : bench.toe * 0.6;
     const y = (b.elev - 260) * SCALE_VERT;
     const x = rMid * SX * Math.cos(b.offset);
     const z = rMid * SY * Math.sin(b.offset);
     const worldPos = localToWorld(x, z, b.elev);
 
-    // 3D Volumetric Face Cut
-    const blockGeo = new THREE.BoxGeometry(18 * SCALE_HORIZ * 2.2, 8, 14 * SCALE_HORIZ * 2.2);
-    const blockMat = new THREE.MeshStandardMaterial({
+    const blockGroup = new THREE.Group();
+    blockGroup.position.set(worldPos.x, worldPos.y, worldPos.z);
+
+    const blockData = {
+      type: "block",
+      id: b.id,
+      name: b.name,
+      typeName: b.typeName,
+      grade: b.grade,
+      elev: b.elev,
+      color: b.color,
+      excavator: b.excavator
+    };
+    blockGroup.userData = blockData;
+
+    // 1. Trapezoidal Blasted Ore Muckpile (Навал взорванной руды с откосами)
+    const wBase = 26 * SCALE_HORIZ;
+    const lBase = 20 * SCALE_HORIZ;
+    const wTop = wBase * 0.55;
+    const lTop = lBase * 0.55;
+    const h = 5.8;
+
+    const muckGeo = new THREE.BufferGeometry();
+    const v0 = [-wBase/2, 0, -lBase/2];
+    const v1 = [ wBase/2, 0, -lBase/2];
+    const v2 = [ wBase/2, 0,  lBase/2];
+    const v3 = [-wBase/2, 0,  lBase/2];
+    const v4 = [-wTop/2,  h, -lTop/2];
+    const v5 = [ wTop/2,  h, -lTop/2];
+    const v6 = [ wTop/2,  h,  lTop/2];
+    const v7 = [-wTop/2,  h,  lTop/2];
+
+    const muckPos = [
+      // Top face
+      ...v4, ...v5, ...v6,   ...v4, ...v6, ...v7,
+      // Front face
+      ...v3, ...v2, ...v6,   ...v3, ...v6, ...v7,
+      // Back face
+      ...v1, ...v0, ...v4,   ...v1, ...v4, ...v5,
+      // Left face
+      ...v0, ...v3, ...v7,   ...v0, ...v7, ...v4,
+      // Right face
+      ...v2, ...v1, ...v5,   ...v2, ...v5, ...v6
+    ];
+    muckGeo.setAttribute("position", new THREE.Float32BufferAttribute(muckPos, 3));
+    muckGeo.computeVertexNormals();
+
+    const muckMat = new THREE.MeshStandardMaterial({
       color: b.color,
       emissive: b.color,
-      emissiveIntensity: 0.25,
-      roughness: 0.5,
-      transparent: true,
-      opacity: 0.82
+      emissiveIntensity: 0.20,
+      roughness: 0.90,
+      metalness: 0.10,
+      side: THREE.DoubleSide
     });
-    const mesh = new THREE.Mesh(blockGeo, blockMat);
-    mesh.position.set(worldPos.x, worldPos.y + 4, worldPos.z);
-    mesh.castShadow = true;
+    const muckMesh = new THREE.Mesh(muckGeo, muckMat);
+    muckMesh.castShadow = true;
+    muckMesh.receiveShadow = true;
+    muckMesh.userData = blockData;
+    blockGroup.add(muckMesh);
 
-    // Glowing border wireframe
-    const wireGeo = new THREE.EdgesGeometry(blockGeo);
-    const wireMat = new THREE.LineBasicMaterial({ color: b.color, linewidth: 2 });
-    const wire = new THREE.LineSegments(wireGeo, wireMat);
-    mesh.add(wire);
+    // Rocky ore boulders on top and tumbling down the muckpile
+    for (let i = 0; i < 5; i++) {
+      const rockR = 1.1 + (i * 0.22);
+      const rockGeo = new THREE.DodecahedronGeometry(rockR, 0);
+      const rockMesh = new THREE.Mesh(rockGeo, muckMat);
+      const rx = ((i % 2 === 0 ? 1 : -1) * wTop * (0.2 + i * 0.08));
+      const rz = ((i > 1 ? 1 : -1) * lTop * (0.2 + i * 0.08));
+      rockMesh.position.set(rx, h + rockR * 0.35, rz);
+      rockMesh.rotation.set(i * 0.75, i * 1.15, i * 0.55);
+      rockMesh.userData = blockData;
+      blockGroup.add(rockMesh);
+    }
 
-    // 3D Billboard Tag
-    const tagSprite = createLabelSprite(b.name, `${b.grade}% Cu | Забой`, `#${b.color.toString(16).padStart(6, '0')}`);
-    tagSprite.position.set(0, 9, 0);
-    tagSprite.scale.set(14, 3.8, 1);
-    mesh.add(tagSprite);
+    // 2. Geological Survey Boundary Line on Berm Floor (Маркшейдерский контур блока)
+    const boundPts = [
+      new THREE.Vector3(-wBase/2 - 1.8, 0.12, -lBase/2 - 1.8),
+      new THREE.Vector3( wBase/2 + 1.8, 0.12, -lBase/2 - 1.8),
+      new THREE.Vector3( wBase/2 + 1.8, 0.12,  lBase/2 + 1.8),
+      new THREE.Vector3(-wBase/2 - 1.8, 0.12,  lBase/2 + 1.8),
+      new THREE.Vector3(-wBase/2 - 1.8, 0.12, -lBase/2 - 1.8)
+    ];
+    const boundGeo = new THREE.BufferGeometry().setFromPoints(boundPts);
+    const boundMat = new THREE.LineBasicMaterial({ color: b.color, linewidth: 2.5 });
+    const boundLine = new THREE.Line(boundGeo, boundMat);
+    blockGroup.add(boundLine);
+
+    // 3. Mine Survey Stakes with Pennant Flags at corners
+    const stakeCorners = [
+      [-wBase/2 - 1.8, -lBase/2 - 1.8],
+      [ wBase/2 + 1.8, -lBase/2 - 1.8],
+      [ wBase/2 + 1.8,  lBase/2 + 1.8],
+      [-wBase/2 - 1.8,  lBase/2 + 1.8]
+    ];
+    stakeCorners.forEach(c => {
+      const postGeo = new THREE.CylinderGeometry(0.14, 0.14, 4.4, 6);
+      const postMat = new THREE.MeshStandardMaterial({ color: 0xffeb3b, roughness: 0.3 });
+      const post = new THREE.Mesh(postGeo, postMat);
+      post.position.set(c[0], 2.2, c[1]);
+      blockGroup.add(post);
+
+      const flagGeo = new THREE.BoxGeometry(1.2, 0.55, 0.04);
+      const flagMat = new THREE.MeshBasicMaterial({ color: b.color, side: THREE.DoubleSide });
+      const flag = new THREE.Mesh(flagGeo, flagMat);
+      flag.position.set(c[0] + 0.6, 3.9, c[1]);
+      blockGroup.add(flag);
+    });
+
+    // 4. Clear High-Visibility 3D Placard Sign
+    const tagSprite = createMiningFaceSprite(b);
+    tagSprite.position.set(0, h + 8.0, 0);
+    tagSprite.userData = blockData;
+    blockGroup.add(tagSprite);
     labelSprites.push(tagSprite);
 
-    mesh.userData = { type: "block", id: b.id, name: b.name, grade: b.grade, elev: b.elev };
-    blocksGroup.add(mesh);
-    blockMeshes[b.id] = mesh;
+    blocksGroup.add(blockGroup);
+    blockMeshes[b.id] = blockGroup;
   });
 }
 
@@ -1372,6 +1536,14 @@ function setupRaycaster(canvas) {
       }
       if (topObj && topObj.userData.type) {
         selectEntity(topObj.userData);
+        if (topObj.userData.type === "block") {
+          const targetGroup = blockMeshes[topObj.userData.id];
+          if (targetGroup) {
+            followTarget = null;
+            cameraTargetLook = targetGroup.position.clone();
+            cameraTargetPos = new THREE.Vector3(targetGroup.position.x + 36, targetGroup.position.y + 24, targetGroup.position.z + 36);
+          }
+        }
       }
     }
   });
@@ -1388,7 +1560,19 @@ function selectEntity(userData) {
 
   if (userData.type === "truck") {
     const t = userData.data;
-    if (inspectorBadge) inspectorBadge.textContent = "БелАЗ-75131";
+    if (inspectorBadge) {
+      inspectorBadge.textContent = "БелАЗ-75131";
+      inspectorBadge.style.color = "#00e5ff";
+      inspectorBadge.style.borderColor = "rgba(0, 229, 255, 0.4)";
+    }
+    document.getElementById("insp-lbl-payload").textContent = "Загрузка кузова:";
+    document.getElementById("insp-lbl-grade").textContent = "Качество в кузове:";
+    document.getElementById("insp-lbl-speed").textContent = "Скорость движения:";
+    document.getElementById("insp-lbl-fuel").textContent = "Уровень топлива:";
+    document.getElementById("insp-lbl-elev").textContent = "Текущий горизонт:";
+    document.getElementById("insp-lbl-trips").textContent = "Выполнено рейсов:";
+    document.getElementById("insp-lbl-target").textContent = "Назначенный забой:";
+
     document.getElementById("insp-name").textContent = t.name;
     document.getElementById("insp-status").textContent = translateState(t.state);
     document.getElementById("insp-payload").textContent = `${t.payload_t} т`;
@@ -1400,27 +1584,59 @@ function selectEntity(userData) {
     document.getElementById("insp-target-exc").textContent = t.target_excavator;
   } else if (userData.type === "excavator") {
     const e = userData.data;
-    if (inspectorBadge) inspectorBadge.textContent = "ЭКГ-15";
+    if (inspectorBadge) {
+      inspectorBadge.textContent = "ЭКГ-15";
+      inspectorBadge.style.color = "#ffeb3b";
+      inspectorBadge.style.borderColor = "rgba(255, 235, 59, 0.4)";
+    }
+    document.getElementById("insp-lbl-payload").textContent = "Объём отгрузки:";
+    document.getElementById("insp-lbl-grade").textContent = "Качество в забое:";
+    document.getElementById("insp-lbl-speed").textContent = "Очередь самосвалов:";
+    document.getElementById("insp-lbl-fuel").textContent = "Крепость пород:";
+    document.getElementById("insp-lbl-elev").textContent = "Рабочий горизонт:";
+    document.getElementById("insp-lbl-trips").textContent = "Число ковшей:";
+    document.getElementById("insp-lbl-target").textContent = "Рудный блок:";
+
     document.getElementById("insp-name").textContent = e.name;
     document.getElementById("insp-status").textContent = translateState(e.state);
     document.getElementById("insp-payload").textContent = `${e.tonnes_loaded} т отгружено`;
     document.getElementById("insp-grade").textContent = `${e.grade_cu} % Cu`;
-    document.getElementById("insp-speed").textContent = `Очередь: ${e.queue_len} ед.`;
-    document.getElementById("insp-fuel").textContent = `Крепость f=${e.hardness_f}`;
+    document.getElementById("insp-speed").textContent = `${e.queue_len} ед.`;
+    document.getElementById("insp-fuel").textContent = `f = ${e.hardness_f}`;
     document.getElementById("insp-elev").textContent = `Горизонт +${e.coordinates[2]} м`;
     document.getElementById("insp-trips").textContent = `${e.passes_total} ковшей`;
     document.getElementById("insp-target-exc").textContent = e.block_id;
   } else if (userData.type === "block") {
-    if (inspectorBadge) inspectorBadge.textContent = "Рудный блок";
-    document.getElementById("insp-name").textContent = userData.name;
-    document.getElementById("insp-status").textContent = `Горизонт +${userData.elev} м`;
-    document.getElementById("insp-payload").textContent = `Балансовые запасы`;
-    document.getElementById("insp-grade").textContent = `${userData.grade} % Cu`;
-    document.getElementById("insp-speed").textContent = `Категория: Руда`;
-    document.getElementById("insp-fuel").textContent = `Крепость: f=10-12`;
+    const colHex = userData.color ? `#${userData.color.toString(16).padStart(6, '0')}` : "#00e5ff";
+    if (inspectorBadge) {
+      inspectorBadge.textContent = "Рудный забой";
+      inspectorBadge.style.color = colHex;
+      inspectorBadge.style.borderColor = colHex;
+    }
+    document.getElementById("insp-lbl-payload").textContent = "Отбитая масса:";
+    document.getElementById("insp-lbl-grade").textContent = "Содержание меди:";
+    document.getElementById("insp-lbl-speed").textContent = "Техника в забое:";
+    document.getElementById("insp-lbl-fuel").textContent = "Крепость пород:";
+    document.getElementById("insp-lbl-elev").textContent = "Горизонт добычи:";
+    document.getElementById("insp-lbl-trips").textContent = "Категория запасов:";
+    document.getElementById("insp-lbl-target").textContent = "Идентификатор:";
+
+    document.getElementById("insp-name").textContent = `Забой ${userData.name} (${userData.typeName || "Руда"})`;
+    document.getElementById("insp-status").textContent = `Горизонт +${userData.elev} м (Уступ карьера)`;
+    document.getElementById("insp-payload").textContent = `~35 000 т навал`;
+    document.getElementById("insp-grade").textContent = `${userData.grade} % Cu (${userData.grade >= 1.5 ? "Богатая" : (userData.grade >= 1.0 ? "Рядовая" : "Бедная")})`;
+    document.getElementById("insp-speed").textContent = userData.excavator ? userData.excavator : `Резервный забой шихтовки`;
+    document.getElementById("insp-fuel").textContent = `f = 10–12 (Порфиры)`;
     document.getElementById("insp-elev").textContent = `+${userData.elev} м`;
-    document.getElementById("insp-trips").textContent = `Открытый забой`;
+    document.getElementById("insp-trips").textContent = `Балансовые запасы`;
     document.getElementById("insp-target-exc").textContent = userData.id;
+
+    const bar = document.getElementById("insp-block-bar");
+    const tonnes = document.getElementById("insp-block-tonnes");
+    const pct = document.getElementById("insp-block-pct");
+    if (bar) bar.style.width = "84%";
+    if (tonnes) tonnes.textContent = "245 000 т балансовых запасов";
+    if (pct) pct.textContent = "84%";
   }
 }
 
@@ -1590,20 +1806,33 @@ function renderExcavatorsList(excavators) {
   excavators.forEach(e => {
     const item = document.createElement("div");
     item.className = "exc-item";
-    item.onclick = () => selectEntity({ type: "excavator", id: e.id, data: e });
+    item.onclick = () => {
+      selectEntity({ type: "excavator", id: e.id, data: e });
+      const mesh = excavatorMeshes[e.id];
+      if (mesh) {
+        followTarget = null;
+        cameraTargetLook = mesh.position.clone();
+        cameraTargetPos = new THREE.Vector3(mesh.position.x + 36, mesh.position.y + 24, mesh.position.z + 36);
+      }
+    };
 
     const isBroken = e.state === "breakdown";
     const statusClass = e.state === "loading" ? "status-loading" : (isBroken ? "status-breakdown" : "status-idle");
     const statusText = e.state === "loading" ? "Погрузка" : (isBroken ? "Авария" : "Ожидание");
 
+    const blockDef = ORE_BLOCKS_DEF[e.block_id] || {};
+    const blockTag = blockDef.name ? `[${blockDef.name}]` : '';
+    const gradeColor = e.grade_cu >= 1.5 ? '#e040fb' : (e.grade_cu >= 1.0 ? '#ff9100' : '#82b1ff');
+
     const btnHtml = isBroken
-      ? `<button class="btn-exc-action btn-exc-repair" title="Вернуть экскаватор в работу" onclick="handleExcavatorAction('${e.id}', 'repair', event)">🔧 В строй</button>`
+      ? `<button class="btn-exc-action btn-exc-repair" title="Вернуть экскаватор в строй" onclick="handleExcavatorAction('${e.id}', 'repair', event)">🔧 В строй</button>`
       : `<button class="btn-exc-action btn-exc-break" title="Смоделировать аварию экскаватора" onclick="handleExcavatorAction('${e.id}', 'breakdown', event)">⚠️ Авария</button>`;
 
     item.innerHTML = `
       <div class="exc-info">
         <span class="exc-tag">${e.id.replace("excavator-", "ЭКГ-")}</span>
-        <span class="exc-grade">(${e.grade_cu}% Cu)</span>
+        <span class="exc-face" style="color:${gradeColor}; font-weight:600; font-size:10.5px;" title="${blockDef.typeName || 'Забой'}">${blockTag}</span>
+        <span class="exc-grade">${e.grade_cu}%</span>
         <span class="exc-status ${statusClass}">${statusText}</span>
       </div>
       <div class="exc-btn-box">
@@ -1671,8 +1900,8 @@ function setupToolbarHandlers() {
   document.getElementById("btn-view-pit").addEventListener("click", () => {
     setActiveBtn("btn-view-pit");
     followTarget = null;
-    cameraTargetPos = new THREE.Vector3(70, 95, 60);
-    cameraTargetLook = new THREE.Vector3(0, 25, 0);
+    cameraTargetPos = new THREE.Vector3(55, 75, 75);
+    cameraTargetLook = new THREE.Vector3(12, 32, 10);
   });
 
   // Camera preset 5: Follow Truck

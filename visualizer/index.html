@@ -136,10 +136,11 @@
         </div>
         <div class="layer-toggles">
           <button id="btn-toggle-labels" class="btn-toggle active" title="Показать/скрыть 3D-метки объектов">🏷️ Метки</button>
-          <button id="btn-toggle-blocks" class="btn-toggle active" title="Показать/скрыть рудные блоки">🏔️ Блоки</button>
+          <button id="btn-toggle-blocks" class="btn-toggle active" title="Показать/скрыть рудные забои карьера">⛏️ Рудные забои</button>
           <button id="btn-toggle-roads" class="btn-toggle active" title="Показать/скрыть разметку серпантина">🛣️ Серпантин</button>
         </div>
         <div class="legend-bar">
+          <span class="legend-item"><strong style="color: #fff; font-size: 11px;">Забои:</strong></span>
           <span class="legend-item"><span class="swatch swatch-rich"></span> Богатая (&gt;1.5% Cu)</span>
           <span class="legend-item"><span class="swatch swatch-std"></span> Рядовая (1.0–1.2%)</span>
           <span class="legend-item"><span class="swatch swatch-lean"></span> Бедная (&lt;0.8%)</span>
@@ -202,8 +203,8 @@
       </div>
 
       <div id="inspector-empty" class="inspector-empty-state">
-        <div class="cube-icon">🧊</div>
-        <p>Выберите любой самосвал, забой или дробилку на 3D-сцене для просмотра телеметрии цифрового двойника</p>
+        <div class="cube-icon">⛏️</div>
+        <p><strong>Рудные забои (навалы руды на уступах)</strong> содержат руду разного сорта (% Cu) для шихтовки.<br><br>Кликните на любой забой, экскаватор или самосвал на 3D-сцене для геологического паспорта и телеметрии</p>
       </div>
 
       <div id="inspector-content" class="inspector-content hidden">
@@ -213,31 +214,31 @@
 
           <div class="insp-rows">
             <div class="insp-row">
-              <span class="label">Загрузка кузова:</span>
+              <span id="insp-lbl-payload" class="label">Загрузка кузова:</span>
               <span id="insp-payload" class="val">130.0 т</span>
             </div>
             <div class="insp-row">
-              <span class="label">Качество в кузове:</span>
+              <span id="insp-lbl-grade" class="label">Качество в кузове:</span>
               <span id="insp-grade" class="val highlight">1.65 % Cu</span>
             </div>
             <div class="insp-row">
-              <span class="label">Скорость:</span>
+              <span id="insp-lbl-speed" class="label">Скорость:</span>
               <span id="insp-speed" class="val">14.2 км/ч</span>
             </div>
             <div class="insp-row">
-              <span class="label">Уровень топлива:</span>
+              <span id="insp-lbl-fuel" class="label">Уровень топлива:</span>
               <span id="insp-fuel" class="val">84.5 %</span>
             </div>
             <div class="insp-row">
-              <span class="label">Текущий горизонт:</span>
+              <span id="insp-lbl-elev" class="label">Текущий горизонт:</span>
               <span id="insp-elev" class="val">+435.2 м</span>
             </div>
             <div class="insp-row">
-              <span class="label">Выполнено рейсов:</span>
+              <span id="insp-lbl-trips" class="label">Выполнено рейсов:</span>
               <span id="insp-trips" class="val">14 рейсов</span>
             </div>
             <div class="insp-row">
-              <span class="label">Назначенный забой:</span>
+              <span id="insp-lbl-target" class="label">Назначенный забой:</span>
               <span id="insp-target-exc" class="val">ЭКГ-15 №1</span>
             </div>
           </div>
