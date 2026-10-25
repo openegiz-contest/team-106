@@ -21,6 +21,14 @@ function lonLatToWorld(lon, lat, elev) {
   return localToWorld(x, y, elev);
 }
 
+// Shortest-arc angle interpolation (prevents 360-degree flip spins)
+function lerpAngle(a, b, t) {
+  let diff = (b - a) % (Math.PI * 2);
+  if (diff < -Math.PI) diff += Math.PI * 2;
+  if (diff > Math.PI) diff -= Math.PI * 2;
+  return a + diff * t;
+}
+
 // Pit Benches Profile (meters)
 const BENCHES = [
   { elev: 460, toe: 620, crest: 580, name: "Поверхность (+460м)", rockColor: 0x6e685c },
@@ -334,6 +342,35 @@ function init3D() {
 
     controls.update();
 
+    // 60 FPS Smooth Truck Interpolation & Wheel Spin
+    const now = performance.now();
+    Object.values(truckMeshes).forEach(mesh => {
+      if (!mesh.userData.targetPosition) return;
+      const elapsed = now - (mesh.userData.telemetryTime || now);
+      // Normalized time over 1000ms polling cycle
+      const progress = Math.min(1.0, Math.max(0.0, elapsed / 1000.0));
+      // Hermite smoothstep for natural acceleration/deceleration
+      const alpha = progress * progress * (3.0 - 2.0 * progress);
+
+      if (mesh.userData.prevPosition) {
+        mesh.position.lerpVectors(mesh.userData.prevPosition, mesh.userData.targetPosition, alpha);
+      } else {
+        mesh.position.copy(mesh.userData.targetPosition);
+      }
+
+      // Smooth heading rotation along shortest arc
+      if (mesh.userData.targetHeading !== undefined) {
+        mesh.rotation.y = lerpAngle(mesh.rotation.y, mesh.userData.targetHeading, 0.14);
+      }
+
+      // Wheel spinning proportional to truck speed
+      if (mesh.userData.wheels && (mesh.userData.speedKmh || 0) > 0.5) {
+        const speedMs = mesh.userData.speedKmh / 3.6;
+        const wheelRotDelta = (speedMs * 0.016) / 1.6;
+        mesh.userData.wheels.forEach(w => w.rotateY(wheelRotDelta));
+      }
+    });
+
     // Idle excavator shoveling animation
     Object.values(excavatorMeshes).forEach(group => {
       if (group.userData.state === "loading" && group.userData.deck) {
@@ -571,7 +608,7 @@ function buildRealisticPit() {
   scene.add(pitGroup);
 }
 
-// --- 2. Wide Haul Road Ribbon with Safety Bunds ---
+// --- 2. Monolithic Cut-and-Fill Haul Road Shelf (Литой карьерный серпантин) ---
 function buildHaulRoadRibbon() {
   roadGroup.clear();
 
@@ -591,7 +628,7 @@ function buildHaulRoadRibbon() {
   for (let k = 0; k < RAMP_DEF.length - 1; k++) {
     const p0 = RAMP_DEF[k];
     const p1 = RAMP_DEF[k + 1];
-    const n = 28;
+    const n = 32;
     for (let s = 0; s <= n; s++) {
       const t = s / n;
       const elev = p0.elev + (p1.elev - p0.elev) * t;
@@ -603,11 +640,12 @@ function buildHaulRoadRibbon() {
     }
   }
 
-  // Generate 24m wide ribbon mesh
-  const roadWidth = 24.0 * SCALE_HORIZ;
-  const ribbonGeo = new THREE.BufferGeometry();
-  const positions = [];
-  const uvs = [];
+  const halfWidth = 11.0 * SCALE_HORIZ; // 22m total driving surface
+  const deckPositions = [];
+  const deckUVs = [];
+  const rockPositions = [];
+  const rockUVs = [];
+  const guidePostPositions = [];
 
   for (let i = 0; i < roadCurvePoints.length - 1; i++) {
     const pA = roadCurvePoints[i];
@@ -615,58 +653,141 @@ function buildHaulRoadRibbon() {
 
     const dir = new THREE.Vector3().subVectors(pB, pA).normalize();
     const up = new THREE.Vector3(0, 1, 0);
-    const side = new THREE.Vector3().crossVectors(dir, up).normalize().multiplyScalar(roadWidth * 0.5);
 
-    const v1 = pA.clone().sub(side).add(new THREE.Vector3(0, 0.2, 0));
-    const v2 = pA.clone().add(side).add(new THREE.Vector3(0, 0.2, 0));
-    const v3 = pB.clone().sub(side).add(new THREE.Vector3(0, 0.2, 0));
-    const v4 = pB.clone().add(side).add(new THREE.Vector3(0, 0.2, 0));
+    // Side normal: ensure vector points towards pit interior (berm / plunge slope)
+    let nBerm = new THREE.Vector3().crossVectors(dir, up).normalize();
+    const toCenterA = new THREE.Vector3(-pA.x, 0, -pA.z).normalize();
+    if (nBerm.dot(toCenterA) < 0) {
+      nBerm.negate();
+    }
+    const nWall = nBerm.clone().negate();
 
-    positions.push(v1.x, v1.y, v1.z, v2.x, v2.y, v2.z, v3.x, v3.y, v3.z);
-    positions.push(v2.x, v2.y, v2.z, v4.x, v4.y, v4.z, v3.x, v3.y, v3.z);
+    // Cross-section vertices for slice A
+    // 1. Cut into mountain wall (+3.6m elevation into rock slope)
+    const vCutA = pA.clone().add(nWall.clone().multiplyScalar(halfWidth + 4.6)).add(new THREE.Vector3(0, 3.6, 0));
+    // 2. Inner road gutter
+    const vInnerA = pA.clone().add(nWall.clone().multiplyScalar(halfWidth)).add(new THREE.Vector3(0, 0.08, 0));
+    // 3. Centerline slightly cambered
+    const vCentA = pA.clone().add(new THREE.Vector3(0, 0.16, 0));
+    // 4. Outer road edge
+    const vOuterA = pA.clone().add(nBerm.clone().multiplyScalar(halfWidth)).add(new THREE.Vector3(0, 0.08, 0));
+    // 5. Safety rock berm crest (+1.4m height barrier)
+    const vBermA = pA.clone().add(nBerm.clone().multiplyScalar(halfWidth + 1.8)).add(new THREE.Vector3(0, 1.4, 0));
+    // 6. Rock toe plunging into lower terrace (-4.2m)
+    const vToeA = pA.clone().add(nBerm.clone().multiplyScalar(halfWidth + 5.8)).sub(new THREE.Vector3(0, 4.2, 0));
 
-    const uvY1 = (i / roadCurvePoints.length) * 36;
-    const uvY2 = ((i + 1) / roadCurvePoints.length) * 36;
-    uvs.push(0, uvY1, 1, uvY1, 0, uvY2);
-    uvs.push(1, uvY1, 1, uvY2, 0, uvY2);
+    // Next slice B
+    const dirB = (i + 2 < roadCurvePoints.length) ? new THREE.Vector3().subVectors(roadCurvePoints[i + 2], pB).normalize() : dir;
+    let nBermB = new THREE.Vector3().crossVectors(dirB, up).normalize();
+    const toCenterB = new THREE.Vector3(-pB.x, 0, -pB.z).normalize();
+    if (nBermB.dot(toCenterB) < 0) {
+      nBermB.negate();
+    }
+    const nWallB = nBermB.clone().negate();
+
+    const vCutB = pB.clone().add(nWallB.clone().multiplyScalar(halfWidth + 4.6)).add(new THREE.Vector3(0, 3.6, 0));
+    const vInnerB = pB.clone().add(nWallB.clone().multiplyScalar(halfWidth)).add(new THREE.Vector3(0, 0.08, 0));
+    const vCentB = pB.clone().add(new THREE.Vector3(0, 0.16, 0));
+    const vOuterB = pB.clone().add(nBermB.clone().multiplyScalar(halfWidth)).add(new THREE.Vector3(0, 0.08, 0));
+    const vBermB = pB.clone().add(nBermB.clone().multiplyScalar(halfWidth + 1.8)).add(new THREE.Vector3(0, 1.4, 0));
+    const vToeB = pB.clone().add(nBermB.clone().multiplyScalar(halfWidth + 5.8)).sub(new THREE.Vector3(0, 4.2, 0));
+
+    // A. Road Deck (2 quads: inner-to-center and center-to-outer for natural camber)
+    // Quad 1: vInner -> vCent
+    deckPositions.push(
+      vInnerA.x, vInnerA.y, vInnerA.z,   vCentA.x, vCentA.y, vCentA.z,   vInnerB.x, vInnerB.y, vInnerB.z,
+      vCentA.x, vCentA.y, vCentA.z,     vCentB.x, vCentB.y, vCentB.z,   vInnerB.x, vInnerB.y, vInnerB.z
+    );
+    // Quad 2: vCent -> vOuter
+    deckPositions.push(
+      vCentA.x, vCentA.y, vCentA.z,     vOuterA.x, vOuterA.y, vOuterA.z, vCentB.x, vCentB.y, vCentB.z,
+      vOuterA.x, vOuterA.y, vOuterA.z,   vOuterB.x, vOuterB.y, vOuterB.z, vCentB.x, vCentB.y, vCentB.z
+    );
+
+    const uvV1 = (i / roadCurvePoints.length) * 48;
+    const uvV2 = ((i + 1) / roadCurvePoints.length) * 48;
+    deckUVs.push(
+      0.0, uvV1,  0.5, uvV1,  0.0, uvV2,
+      0.5, uvV1,  0.5, uvV2,  0.0, uvV2,
+      0.5, uvV1,  1.0, uvV1,  0.5, uvV2,
+      1.0, uvV1,  1.0, uvV2,  0.5, uvV2
+    );
+
+    // B. Monolithic Rock Structure:
+    // 1. Mountain wall cut slope (vCut -> vInner)
+    rockPositions.push(
+      vCutA.x, vCutA.y, vCutA.z,       vInnerA.x, vInnerA.y, vInnerA.z, vCutB.x, vCutB.y, vCutB.z,
+      vInnerA.x, vInnerA.y, vInnerA.z, vInnerB.x, vInnerB.y, vInnerB.z, vCutB.x, vCutB.y, vCutB.z
+    );
+    // 2. Safety berm inner slope (vOuter -> vBerm)
+    rockPositions.push(
+      vOuterA.x, vOuterA.y, vOuterA.z, vBermA.x, vBermA.y, vBermA.z,   vOuterB.x, vOuterB.y, vOuterB.z,
+      vBermA.x, vBermA.y, vBermA.z,   vBermB.x, vBermB.y, vBermB.z,   vOuterB.x, vOuterB.y, vOuterB.z
+    );
+    // 3. Safety berm outer plunge slope into pit (vBerm -> vToe)
+    rockPositions.push(
+      vBermA.x, vBermA.y, vBermA.z,   vToeA.x, vToeA.y, vToeA.z,       vBermB.x, vBermB.y, vBermB.z,
+      vToeA.x, vToeA.y, vToeA.z,       vToeB.x, vToeB.y, vToeB.z,       vBermB.x, vBermB.y, vBermB.z
+    );
+
+    rockUVs.push(
+      0, uvV1, 1, uvV1, 0, uvV2,  1, uvV1, 1, uvV2, 0, uvV2,
+      0, uvV1, 1, uvV1, 0, uvV2,  1, uvV1, 1, uvV2, 0, uvV2,
+      0, uvV1, 1, uvV1, 0, uvV2,  1, uvV1, 1, uvV2, 0, uvV2
+    );
+
+    if (i % 6 === 0) {
+      guidePostPositions.push({ pos: vBermA.clone().add(new THREE.Vector3(0, 0.4, 0)), isAmber: (i % 12 === 0) });
+    }
   }
 
-  ribbonGeo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  ribbonGeo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-  ribbonGeo.computeVertexNormals();
+  // 1. Road Surface Deck Mesh
+  const deckGeo = new THREE.BufferGeometry();
+  deckGeo.setAttribute("position", new THREE.Float32BufferAttribute(deckPositions, 3));
+  deckGeo.setAttribute("uv", new THREE.Float32BufferAttribute(deckUVs, 2));
+  deckGeo.computeVertexNormals();
 
   const roadMat = new THREE.MeshStandardMaterial({
     map: textures.road,
-    roughness: 0.9,
-    metalness: 0.1,
+    roughness: 0.88,
+    metalness: 0.08,
     side: THREE.DoubleSide
   });
+  const deckMesh = new THREE.Mesh(deckGeo, roadMat);
+  deckMesh.receiveShadow = true;
+  roadGroup.add(deckMesh);
 
-  const ribbonMesh = new THREE.Mesh(ribbonGeo, roadMat);
-  ribbonMesh.receiveShadow = true;
-  roadGroup.add(ribbonMesh);
+  // 2. Monolithic Bedrock Cut & Safety Berm Mesh
+  const rockGeo = new THREE.BufferGeometry();
+  rockGeo.setAttribute("position", new THREE.Float32BufferAttribute(rockPositions, 3));
+  rockGeo.setAttribute("uv", new THREE.Float32BufferAttribute(rockUVs, 2));
+  rockGeo.computeVertexNormals();
 
-  // Glowing road center guideline
-  const centerGeo = new THREE.BufferGeometry().setFromPoints(roadCurvePoints.map(p => p.clone().add(new THREE.Vector3(0, 0.35, 0))));
-  const centerMat = new THREE.LineBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.6 });
+  const rockMat = new THREE.MeshStandardMaterial({
+    map: textures.rock,
+    roughness: 0.92,
+    metalness: 0.12,
+    side: THREE.DoubleSide
+  });
+  const rockMesh = new THREE.Mesh(rockGeo, rockMat);
+  rockMesh.receiveShadow = true;
+  rockMesh.castShadow = true;
+  roadGroup.add(rockMesh);
+
+  // 3. Glowing Center Guideline
+  const centerGeo = new THREE.BufferGeometry().setFromPoints(roadCurvePoints.map(p => p.clone().add(new THREE.Vector3(0, 0.32, 0))));
+  const centerMat = new THREE.LineBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.75 });
   const centerLine = new THREE.Line(centerGeo, centerMat);
   roadGroup.add(centerLine);
 
-  // Outer safety rock bund & hazard reflectors along the pit edge
-  for (let i = 0; i < roadCurvePoints.length - 2; i += 4) {
-    const p = roadCurvePoints[i];
-    const pNext = roadCurvePoints[i + 1];
-    const dir = new THREE.Vector3().subVectors(pNext, p).normalize();
-    const side = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize().multiplyScalar(roadWidth * 0.52);
-    const postPos = p.clone().sub(side).add(new THREE.Vector3(0, 0.8, 0));
-
-    // Hazard striped post
-    const postGeo = new THREE.CylinderGeometry(0.25, 0.25, 1.6, 6);
-    const postMat = new THREE.MeshBasicMaterial({ color: i % 8 === 0 ? 0xffd600 : 0xff1744 });
+  // 4. Heavy Mining Hazard Reflectors along Berm Ridge
+  guidePostPositions.forEach(gp => {
+    const postGeo = new THREE.CylinderGeometry(0.22, 0.22, 1.4, 6);
+    const postMat = new THREE.MeshBasicMaterial({ color: gp.isAmber ? 0xffd600 : 0xff1744 });
     const post = new THREE.Mesh(postGeo, postMat);
-    post.position.copy(postPos);
+    post.position.copy(gp.pos);
     roadGroup.add(post);
-  }
+  });
 }
 
 // --- 3. Industrial Facilities (Crusher, Stockpile, Waste Dump) ---
@@ -891,6 +1012,7 @@ function createTruckMesh(truckData) {
     [-2.2, 1.6, -1.5]  // Rear Left Inner
   ];
 
+  const wheels = [];
   wheelPositions.forEach(pos => {
     const wheel = new THREE.Mesh(wheelGeo, wheelMat);
     wheel.rotation.x = Math.PI / 2;
@@ -899,7 +1021,9 @@ function createTruckMesh(truckData) {
     const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 1.15, 8), hubMat);
     wheel.add(hub);
     group.add(wheel);
+    wheels.push(wheel);
   });
+  group.userData.wheels = wheels;
 
   // BelAZ Slanted Dump Body (Кузов ковшового типа)
   const bodyGeo = new THREE.BoxGeometry(7.2, 3.4, 4.8);
@@ -972,6 +1096,7 @@ function createTruckMesh(truckData) {
 }
 
 function updateTrucks3D(trucksData) {
+  const now = performance.now();
   trucksData.forEach(t => {
     let mesh = truckMeshes[t.id];
     if (!mesh) {
@@ -987,12 +1112,19 @@ function updateTrucks3D(trucksData) {
       targetPos = lonLatToWorld(t.coordinates[0], t.coordinates[1], t.coordinates[2]);
     }
 
-    // Smooth position lerp
-    mesh.position.lerp(targetPos, 0.45);
+    if (!mesh.userData.prevPosition) {
+      mesh.position.copy(targetPos);
+      mesh.userData.prevPosition = targetPos.clone();
+    } else {
+      mesh.userData.prevPosition = mesh.position.clone();
+    }
 
-    // Rotation heading
+    mesh.userData.targetPosition = targetPos.clone();
+    mesh.userData.telemetryTime = now;
+    mesh.userData.speedKmh = t.speed_kmh || 0;
+
     if (t.heading !== undefined) {
-      mesh.rotation.y = t.heading + Math.PI / 2;
+      mesh.userData.targetHeading = t.heading + Math.PI / 2;
     }
 
     // Ore payload in body
@@ -1395,20 +1527,44 @@ function renderExcavatorsList(excavators) {
     item.className = "exc-item";
     item.onclick = () => selectEntity({ type: "excavator", id: e.id, data: e });
 
-    const statusClass = e.state === "loading" ? "status-loading" : (e.state === "breakdown" ? "status-breakdown" : "status-idle");
-    const statusText = e.state === "loading" ? "Погрузка" : (e.state === "breakdown" ? "Авария" : "Ожидание");
+    const isBroken = e.state === "breakdown";
+    const statusClass = e.state === "loading" ? "status-loading" : (isBroken ? "status-breakdown" : "status-idle");
+    const statusText = e.state === "loading" ? "Погрузка" : (isBroken ? "Авария" : "Ожидание");
+
+    const btnHtml = isBroken
+      ? `<button class="btn-exc-action btn-exc-repair" title="Вернуть экскаватор в работу" onclick="handleExcavatorAction('${e.id}', 'repair', event)">🔧 В строй</button>`
+      : `<button class="btn-exc-action btn-exc-break" title="Смоделировать аварию экскаватора" onclick="handleExcavatorAction('${e.id}', 'breakdown', event)">⚠️ Авария</button>`;
 
     item.innerHTML = `
-      <div>
-        <span class="exc-tag">${e.id.toUpperCase()}</span>
-        <span style="color: var(--text-muted); margin-left: 6px;">(${e.grade_cu}% Cu)</span>
-      </div>
-      <div>
+      <div class="exc-info">
+        <span class="exc-tag">${e.id.replace("excavator-", "ЭКГ-")}</span>
+        <span class="exc-grade">(${e.grade_cu}% Cu)</span>
         <span class="exc-status ${statusClass}">${statusText}</span>
+      </div>
+      <div class="exc-btn-box">
+        ${btnHtml}
       </div>
     `;
     container.appendChild(item);
   });
+}
+
+// Action handler for per-excavator failure and repair
+async function handleExcavatorAction(excId, action, event) {
+  if (event) {
+    event.stopPropagation(); // Avoid triggering selectEntity row click
+  }
+  const endpoint = action === "repair" ? "/api/scenario/excavator-repair" : "/api/scenario/excavator-failure";
+  try {
+    await fetch(`${SIM_API_BASE}${endpoint}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ excavator_id: excId })
+    });
+    fetchFleetTelemetry();
+  } catch (err) {
+    console.error(`Failed to execute ${action} for ${excId}:`, err);
+  }
 }
 
 // --- 11. Viewport Toolbar & Camera Handlers ---

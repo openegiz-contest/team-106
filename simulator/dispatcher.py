@@ -464,6 +464,17 @@ class FleetDispatcher:
             return {"status": "ok", "message": f"{exc.name} stopped for emergency repair. {len(orphaned)} trucks rerouted."}
         return {"status": "error", "message": f"Excavator {exc_id} not found"}
 
+    def repair_excavator(self, exc_id: str) -> dict:
+        if exc_id in self.excavators:
+            exc = self.excavators[exc_id]
+            exc.state = "idle"
+            has_other_breakdown = any(e.state == "breakdown" for e in self.excavators.values())
+            if not has_other_breakdown:
+                self.active_scenarios["excavator_failure"] = False
+                self.active_scenarios["failed_excavator_id"] = None
+            return {"status": "ok", "message": f"{exc.name} отремонтирован и возвращён в работу."}
+        return {"status": "error", "message": f"Excavator {exc_id} not found"}
+
     def set_dispatch_mode(self, mode: str) -> dict:
         if mode in ("MAX_TONNAGE", "QUALITY_BLEND"):
             self.dispatch_mode = mode

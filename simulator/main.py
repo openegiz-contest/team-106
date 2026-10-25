@@ -221,6 +221,14 @@ def scenario_excavator_failure(req: ExcavatorFailureRequest):
     return res
 
 
+@app.post("/api/scenario/excavator-repair")
+def scenario_excavator_repair(req: ExcavatorFailureRequest):
+    """Repair an excavator and return it to active loading duty"""
+    res = dispatcher.repair_excavator(req.excavator_id)
+    publish_telemetry()
+    return res
+
+
 @app.post("/api/scenario/dispatch-mode")
 def scenario_dispatch_mode(req: DispatchModeRequest):
     """Scenario 2: Switch dispatch mode (MAX_TONNAGE vs QUALITY_BLEND)"""
