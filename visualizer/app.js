@@ -339,36 +339,35 @@ function init3D() {
 
     controls.update();
 
-    // 60 FPS Continuous Smooth Truck Movement & True Forward Orientation
+    // 60 FPS Constant-Velocity Continuous Truck Glide
+    const now = performance.now();
     Object.values(truckMeshes).forEach(mesh => {
-      if (!mesh.userData.targetPosition) return;
-      const target = mesh.userData.targetPosition;
-      const dist = mesh.position.distanceTo(target);
+      if (!mesh.userData.startPos || !mesh.userData.endPos) return;
 
-      // Snap on initial placement or large resets
-      if (dist > 80.0) {
-        mesh.position.copy(target);
-        return;
-      }
+      const startTime = mesh.userData.startTime || now;
+      const duration = mesh.userData.duration || 600;
+      const elapsed = now - startTime;
 
-      // Smooth damped glide towards target position (60 FPS)
-      mesh.position.lerp(target, 0.10);
+      if (mesh.userData.isStopped) {
+        // Truck is stationary at shovel/crusher: gently settle into position
+        mesh.position.lerp(mesh.userData.endPos, 0.15);
+      } else {
+        // Continuous uniform glide across telemetry interval
+        // Extrapolate up to 1.15 to smoothly bridge any minor network jitter without stopping
+        const progress = Math.min(1.15, elapsed / duration);
+        mesh.position.lerpVectors(mesh.userData.startPos, mesh.userData.endPos, progress);
 
-      // Compute heading from actual movement vector in Three.js world space
-      // Front of truck is along local +X, so yaw angle = Math.atan2(-dz, dx)
-      const dx = target.x - mesh.position.x;
-      const dz = target.z - mesh.position.z;
-      const hDist = Math.hypot(dx, dz);
-      if (hDist > 0.08) {
-        const targetHeading = Math.atan2(-dz, dx);
-        mesh.rotation.y = lerpAngle(mesh.rotation.y, targetHeading, 0.16);
-      }
+        // Turn smoothly towards the segment direction
+        if (mesh.userData.targetHeading !== undefined) {
+          mesh.rotation.y = lerpAngle(mesh.rotation.y, mesh.userData.targetHeading, 0.14);
+        }
 
-      // Wheels spin forward in sync with truck speed
-      if (mesh.userData.wheels && (mesh.userData.speedKmh || 0) > 0.5) {
-        const speedMs = mesh.userData.speedKmh / 3.6;
-        const wheelRotDelta = (speedMs * 0.016) / 1.6;
-        mesh.userData.wheels.forEach(w => w.rotateY(wheelRotDelta));
+        // Realistic wheel rolling forward in sync with truck velocity
+        if (mesh.userData.wheels && (mesh.userData.speedKmh || 0) > 0.5) {
+          const speedMs = mesh.userData.speedKmh / 3.6;
+          const wheelRotDelta = (speedMs * 0.016) / 1.6;
+          mesh.userData.wheels.forEach(w => w.rotateY(wheelRotDelta));
+        }
       }
     });
 
@@ -1143,15 +1142,55 @@ function updateTrucks3D(trucksData) {
       targetPos = lonLatToWorld(t.coordinates[0], t.coordinates[1], t.coordinates[2]);
     }
 
-    if (!mesh.userData.prevPosition) {
+    // Seamless telemetry handoff
+    if (!mesh.userData.startPos) {
       mesh.position.copy(targetPos);
-      mesh.userData.prevPosition = targetPos.clone();
+      mesh.userData.startPos = targetPos.clone();
+      mesh.userData.endPos = targetPos.clone();
+      mesh.userData.startTime = now;
+      mesh.userData.duration = 600;
+      mesh.userData.speedKmh = t.speed_kmh || 0;
+      mesh.userData.isStopped = true;
+      if (t.heading !== undefined) {
+        mesh.userData.targetHeading = t.heading;
+        mesh.rotation.y = t.heading;
+      }
     } else {
-      mesh.userData.prevPosition = mesh.position.clone();
-    }
+      const prevEnd = mesh.userData.endPos.clone();
+      const distToNewTarget = prevEnd.distanceTo(targetPos);
 
-    mesh.userData.targetPosition = targetPos.clone();
-    mesh.userData.speedKmh = t.speed_kmh || 0;
+      // If large telemetric jump (simulation reset, teleports, etc.), snap immediately
+      if (distToNewTarget > 60.0) {
+        mesh.position.copy(targetPos);
+        mesh.userData.startPos.copy(targetPos);
+        mesh.userData.endPos.copy(targetPos);
+        mesh.userData.startTime = now;
+        mesh.userData.duration = 600;
+      } else {
+        // Measure real time between telemetry packets
+        const lastStart = mesh.userData.startTime || now;
+        const actualInterval = Math.max(400, Math.min(1500, now - lastStart));
+
+        // Start new continuous segment from where the truck currently is (0 jump!)
+        mesh.userData.startPos.copy(mesh.position);
+        mesh.userData.endPos.copy(targetPos);
+        mesh.userData.startTime = now;
+        mesh.userData.duration = actualInterval;
+      }
+
+      mesh.userData.speedKmh = t.speed_kmh || 0;
+
+      // Determine movement vector and heading
+      const dx = targetPos.x - mesh.position.x;
+      const dz = targetPos.z - mesh.position.z;
+      const hDist = Math.hypot(dx, dz);
+      if (hDist > 0.12 && (t.speed_kmh || 0) > 0.5) {
+        mesh.userData.targetHeading = Math.atan2(-dz, dx);
+        mesh.userData.isStopped = false;
+      } else {
+        mesh.userData.isStopped = true;
+      }
+    }
 
     // Ore payload in body
     const ore = mesh.userData.oreMesh;
@@ -1718,5 +1757,5 @@ window.addEventListener("DOMContentLoaded", () => {
   setupToolbarHandlers();
   setupScenarioButtons();
   fetchFleetTelemetry();
-  setInterval(fetchFleetTelemetry, 1000);
+  setInterval(fetchFleetTelemetry, 600);
 });
