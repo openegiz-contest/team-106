@@ -1,0 +1,146 @@
+{
+  "block-01": {
+    "id": "block-01",
+    "name": "Добычной блок Б-420-1 (Богатая руда)",
+    "horizon": 420,
+    "rock_type": "rich_ore",
+    "copper_pct": 1.65,
+    "iron_pct": 24.5,
+    "initial_tonnes": 240000.0,
+    "remaining_tonnes": 240000.0,
+    "hardness_f": 11,
+    "density_t_m3": 2.75,
+    "assigned_excavator": "excavator-01",
+    "coordinates": [
+      76.92,
+      43.23,
+      420
+    ]
+  },
+  "block-02": {
+    "id": "block-02",
+    "name": "Добычной блок Б-420-2 (Рядовая руда)",
+    "horizon": 420,
+    "rock_type": "medium_ore",
+    "copper_pct": 1.1,
+    "iron_pct": 21.0,
+    "initial_tonnes": 310000.0,
+    "remaining_tonnes": 310000.0,
+    "hardness_f": 9,
+    "density_t_m3": 2.65,
+    "assigned_excavator": null,
+    "coordinates": [
+      76.916,
+      43.228,
+      420
+    ]
+  },
+  "block-03": {
+    "id": "block-03",
+    "name": "Добычной блок Б-380-1 (Высокосортная руда)",
+    "horizon": 380,
+    "rock_type": "rich_ore",
+    "copper_pct": 1.85,
+    "iron_pct": 26.2,
+    "initial_tonnes": 190000.0,
+    "remaining_tonnes": 190000.0,
+    "hardness_f": 12,
+    "density_t_m3": 2.8,
+    "assigned_excavator": "excavator-02",
+    "coordinates": [
+      76.922,
+      43.226,
+      380
+    ]
+  },
+  "block-04": {
+    "id": "block-04",
+    "name": "Добычной блок Б-380-2 (Бедная руда)",
+    "horizon": 380,
+    "rock_type": "lean_ore",
+    "copper_pct": 0.65,
+    "iron_pct": 17.5,
+    "initial_tonnes": 420000.0,
+    "remaining_tonnes": 420000.0,
+    "hardness_f": 8,
+    "density_t_m3": 2.55,
+    "assigned_excavator": null,
+    "coordinates": [
+      76.918,
+      43.224,
+      380
+    ]
+  },
+  "block-05": {
+    "id": "block-05",
+    "name": "Добычной блок Б-340-1 (Целевая шихта)",
+    "horizon": 340,
+    "rock_type": "standard_ore",
+    "copper_pct": 1.05,
+    "iron_pct": 20.0,
+    "initial_tonnes": 350000.0,
+    "remaining_tonnes": 350000.0,
+    "hardness_f": 10,
+    "density_t_m3": 2.68,
+    "assigned_excavator": "excavator-03",
+    "coordinates": [
+      76.925,
+      43.222,
+      340
+    ]
+  },
+  "block-06": {
+    "id": "block-06",
+    "name": "Добычной блок Б-340-2 (Низкосортная руда)",
+    "horizon": 340,
+    "rock_type": "lean_ore",
+    "copper_pct": 0.5,
+    "iron_pct": 15.0,
+    "initial_tonnes": 480000.0,
+    "remaining_tonnes": 480000.0,
+    "hardness_f": 8,
+    "density_t_m3": 2.5,
+    "assigned_excavator": null,
+    "coordinates": [
+      76.929,
+      43.224,
+      340
+    ]
+  },
+  "block-07": {
+    "id": "block-07",
+    "name": "Добычной блок Б-300-1 (Глубокий богатый забой)",
+    "horizon": 300,
+    "rock_type": "rich_ore",
+    "copper_pct": 1.45,
+    "iron_pct": 23.0,
+    "initial_tonnes": 280000.0,
+    "remaining_tonnes": 280000.0,
+    "hardness_f": 13,
+    "density_t_m3": 2.78,
+    "assigned_excavator": "excavator-04",
+    "coordinates": [
+      76.928,
+      43.218,
+      300
+    ]
+  },
+  "block-08": {
+    "id": "block-08",
+    "name": "Добычной блок Б-260-Вскрыша",
+    "horizon": 260,
+    "rock_type": "waste",
+    "copper_pct": 0.12,
+    "iron_pct": 11.0,
+    "initial_tonnes": 600000.0,
+    "remaining_tonnes": 600000.0,
+    "hardness_f": 7,
+    "density_t_m3": 2.45,
+    "assigned_excavator": null,
+    "coordinates": [
+      76.93,
+      43.214,
+      260
+    ]
+  }
+}

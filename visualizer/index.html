@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Цифровой рудник OpenEgiz | 3D-центр диспетчеризации и шихтовки</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
+  <!-- Chart.js for live telemetry sparklines -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <!-- Three.js for 3D Pit Rendering -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="dark-theme">
+  <!-- Top Navigation & Header -->
+  <header class="navbar">
+    <div class="brand">
+      <div class="logo-orb"></div>
+      <div class="brand-text">
+        <span class="platform">OPENEGIZ DIGITAL TWIN</span>
+        <h1 class="title">Геопространственный контроль шихтовки и диспетчеризация карьера</h1>
+      </div>
+    </div>
+
+    <!-- Quick Status Pills -->
+    <div class="header-status">
+      <div class="status-pill live-pill">
+        <span class="pulse-dot"></span>
+        <span id="sim-status-text">СИМУЛЯТОР В ЭФИРЕ</span>
+      </div>
+      <div class="status-pill mode-pill">
+        <span class="label">Режим:</span>
+        <span id="header-mode-badge" class="badge badge-accent">ШИХТОВКА (QUALITY_BLEND)</span>
+      </div>
+      <div class="status-pill time-pill">
+        <span class="label">Время смены:</span>
+        <span id="sim-time" class="mono">00:00:00</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Dashboard Layout -->
+  <main class="main-layout">
+    <!-- Left Sidebar: KPI & Blending Analytics -->
+    <aside class="sidebar-kpi">
+      <div class="panel-header">
+        <h2>Показатели смены и шихтовки</h2>
+        <span class="badge badge-subtle">Online</span>
+      </div>
+
+      <!-- Ore Quality Gauge Card -->
+      <div class="kpi-card blend-gauge-card">
+        <div class="card-title">Содержание полезного компонента (% Cu)</div>
+        <div class="gauge-display">
+          <div class="gauge-value-box">
+            <span id="metric-cu-grade" class="huge-number">1.05</span>
+            <span class="unit">% Cu</span>
+          </div>
+          <div class="target-corridor">
+            <div class="corridor-bar">
+              <div class="target-zone" style="left: 45%; width: 20%;"></div>
+              <div id="grade-indicator-pin" class="pin" style="left: 55%;"></div>
+            </div>
+            <div class="corridor-labels">
+              <span>0.5% (Бедная)</span>
+              <span class="target-label">Цель: 1.05% ± 0.05%</span>
+              <span>2.0% (Богатая)</span>
+            </div>
+          </div>
+        </div>
+        <div id="grade-alert" class="alert-box alert-normal">Качество шихты в коридоре технологической нормы</div>
+      </div>
+
+      <!-- Real-time Metrics Grid -->
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <span class="metric-label">Добыча на фабрику</span>
+          <div class="metric-val">
+            <span id="metric-total-tonnes" class="num">0.0</span>
+            <span class="unit">тонн</span>
+          </div>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Производительность</span>
+          <div class="metric-val">
+            <span id="metric-hourly-tph" class="num">0.0</span>
+            <span class="unit">т/час</span>
+          </div>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Самосвалы в рейсе</span>
+          <div class="metric-val">
+            <span id="metric-active-trucks" class="num">0</span>
+            <span class="unit">/ 12 ед.</span>
+          </div>
+        </div>
+        <div class="metric-card">
+          <span class="metric-label">Очередь ожидания</span>
+          <div class="metric-val">
+            <span id="metric-queue-trucks" class="num">0</span>
+            <span class="unit">самосв.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Blend Trend Sparkline -->
+      <div class="kpi-card chart-card">
+        <div class="card-title">Динамика качества шихты в бункере дробилки</div>
+        <div class="chart-container">
+          <canvas id="blendTrendChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Excavators Live State Mini-List -->
+      <div class="kpi-card excavators-card">
+        <div class="card-title">Статус экскаваторов и качество забоев</div>
+        <div id="excavators-list" class="excavator-mini-list">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+    </aside>
+
+    <!-- Center: 3D Pit Visualization Canvas & Interactive Viewport -->
+    <section class="viewport-section">
+      <div class="viewport-toolbar">
+        <div class="view-modes">
+          <button id="btn-view-3d" class="btn-toggle active">3D Режим</button>
+          <button id="btn-view-top" class="btn-toggle">Вид сверху (2D ГИС)</button>
+          <button id="btn-view-reset" class="btn-toggle">Сброс камеры</button>
+        </div>
+        <div class="legend-bar">
+          <span class="legend-item"><span class="swatch swatch-rich"></span> Богатая руда (&gt;1.5% Cu)</span>
+          <span class="legend-item"><span class="swatch swatch-std"></span> Рядовая шихта (1.0–1.2%)</span>
+          <span class="legend-item"><span class="swatch swatch-lean"></span> Бедная руда (&lt;0.8%)</span>
+          <span class="legend-item"><span class="swatch swatch-truck"></span> Самосвалы БелАЗ</span>
+        </div>
+      </div>
+
+      <!-- Canvas for WebGL / Three.js -->
+      <div id="scene3d-container" class="scene3d-container">
+        <!-- 3D canvas injected here -->
+      </div>
+
+      <!-- Bottom Floating What-If Scenarios Panel -->
+      <div class="scenarios-floating-bar">
+        <div class="scenario-bar-title">
+          <span class="icon">⚡</span>
+          <span>Инженерные сценарии «Что если» (What-If Analysis):</span>
+        </div>
+        <div class="scenarios-actions">
+          <button id="btn-scenario-failure" class="scenario-btn btn-warning">
+            <span class="btn-icon">⚠️</span>
+            <span class="btn-text">
+              <strong>Авария экскаватора</strong>
+              <small>Остановка ЭКГ-01 (богатый забой)</small>
+            </span>
+          </button>
+          <button id="btn-scenario-dispatch" class="scenario-btn btn-primary">
+            <span class="btn-icon">⚖️</span>
+            <span class="btn-text">
+              <strong>Шихтовка vs Тоннаж</strong>
+              <small id="dispatch-btn-sub">Вкл. режим Максимум Тоннажа</small>
+            </span>
+          </button>
+          <button id="btn-scenario-road" class="scenario-btn btn-info">
+            <span class="btn-icon">❄️</span>
+            <span class="btn-text">
+              <strong>Гололёд на съезде</strong>
+              <small id="road-btn-sub">Снижение скорости на 45%</small>
+            </span>
+          </button>
+          <button id="btn-scenario-reset" class="scenario-btn btn-secondary">
+            <span class="btn-icon">🔄</span>
+            <span class="btn-text">
+              <strong>Сброс в норму</strong>
+              <small>Штатный режим</small>
+            </span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Sidebar: Selected Entity Inspector -->
+    <aside class="sidebar-inspector">
+      <div class="panel-header">
+        <h2>Инспектор двойника</h2>
+        <span id="inspector-badge" class="badge badge-accent">БелАЗ-75131</span>
+      </div>
+
+      <div id="inspector-empty" class="inspector-empty-state">
+        <div class="cube-icon">🧊</div>
+        <p>Выберите любой самосвал, забой или дробилку на 3D-сцене для просмотра телеметрии цифрового двойника</p>
+      </div>
+
+      <div id="inspector-content" class="inspector-content hidden">
+        <div class="inspector-card">
+          <h3 id="insp-name">БелАЗ-75131 №01</h3>
+          <div class="insp-tag" id="insp-status">Движение с грузом (Подъём)</div>
+
+          <div class="insp-rows">
+            <div class="insp-row">
+              <span class="label">Загрузка кузова:</span>
+              <span id="insp-payload" class="val">130.0 т</span>
+            </div>
+            <div class="insp-row">
+              <span class="label">Качество в кузове:</span>
+              <span id="insp-grade" class="val highlight">1.65 % Cu</span>
+            </div>
+            <div class="insp-row">
+              <span class="label">Скорость:</span>
+              <span id="insp-speed" class="val">14.2 км/ч</span>
+            </div>
+            <div class="insp-row">
+              <span class="label">Уровень топлива:</span>
+              <span id="insp-fuel" class="val">84.5 %</span>
+            </div>
+            <div class="insp-row">
+              <span class="label">Текущий горизонт:</span>
+              <span id="insp-elev" class="val">+435.2 м</span>
+            </div>
+            <div class="insp-row">
+              <span class="label">Выполнено рейсов:</span>
+              <span id="insp-trips" class="val">14 рейсов</span>
+            </div>
+            <div class="insp-row">
+              <span class="label">Назначенный забой:</span>
+              <span id="insp-target-exc" class="val">ЭКГ-15 №1</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Geological Block Reserves Inspector -->
+        <div class="inspector-card mt-3">
+          <h4>Остаточные запасы блока</h4>
+          <div class="reserve-bar-wrapper">
+            <div class="reserve-bar">
+              <div id="insp-block-bar" class="reserve-fill" style="width: 85%;"></div>
+            </div>
+            <div class="reserve-labels">
+              <span id="insp-block-tonnes">234 500 т осталось</span>
+              <span id="insp-block-pct">97%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Links to Platform Services -->
+        <div class="inspector-card mt-3 links-card">
+          <h4>Сервисы платформы OpenEgiz</h4>
+          <a href="http://localhost:3000" target="_blank" class="service-link">
+            <span>📊 Аналитические дашборды Grafana (Порт 3000)</span>
+            <span class="arrow">↗</span>
+          </a>
+          <a href="http://localhost:8080/api/2/things" target="_blank" class="service-link">
+            <span>🌐 API цифровых двойников Eclipse Ditto (Порт 8080)</span>
+            <span class="arrow">↗</span>
+          </a>
+          <a href="http://localhost:8000/docs" target="_blank" class="service-link">
+            <span>⚙️ Swagger API симулятора и What-If (Порт 8000)</span>
+            <span class="arrow">↗</span>
+          </a>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

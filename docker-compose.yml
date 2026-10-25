@@ -1,0 +1,287 @@
+name: openegiz-mine
+
+x-ditto-service: &ditto-service
+  restart: unless-stopped
+  networks:
+    default:
+      aliases:
+        - ditto-cluster
+  depends_on:
+    mongodb:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD-SHELL", "curl --fail --silent $$(hostname):8558/alive || exit 1"]
+    interval: 15s
+    timeout: 10s
+    retries: 8
+    start_period: 120s
+
+x-ditto-java-options: &ditto-java-options >-
+  -XX:ActiveProcessorCount=2 -XX:+ExitOnOutOfMemoryError -XX:+UseContainerSupport
+  -XX:+UseStringDeduplication -Xss512k -XX:+UseG1GC
+  -XX:MaxGCPauseMillis=150 -Dakka.coordinated-shutdown.exit-jvm=on
+  -Dakka.cluster.shutdown-after-unsuccessful-join-seed-nodes=180s
+  -Dakka.cluster.failure-detector.threshold=15.0
+  -Dakka.cluster.failure-detector.expected-response-after=10s
+  -Dakka.cluster.failure-detector.acceptable-heartbeat-pause=60s
+  -Dditto.cluster.sbr.auto-enable-after=0s
+  -Dakka.cluster.split-brain-resolver.down-all-when-unstable=off
+  -Dditto.protocol.blocklist.0=raw-request-uri -Dditto.protocol.blocklist.1=cache-control
+  -Dditto.protocol.blocklist.2=connection -Dditto.protocol.blocklist.3=timeout-access
+  -Dditto.protocol.blocklist.4=accept-encoding -Dditto.protocol.blocklist.5=x-forwarded-scheme
+  -Dditto.protocol.blocklist.6=x-forwarded-port -Dditto.protocol.blocklist.7=x-forwarded-for
+  -Dditto.protocol.blocklist.8=forwarded=for -Dditto.protocol.blocklist.9=sec-fetch-mode
+  -Dditto.protocol.blocklist.10=sec-fetch-site -Dditto.protocol.blocklist.11=authorization
+  -Dditto.protocol.blocklist.12=accept-language -Dditto.protocol.blocklist.13=host
+  -Dditto.protocol.blocklist.14=via -Dditto.protocol.blocklist.15=sec-ch-ua
+  -Dditto.protocol.blocklist.16=sec-ch-ua-mobile -Dditto.protocol.blocklist.17=sec-ch-ua-platform
+  -Dditto.protocol.blocklist.18=sec-fetch-dest -Dditto.protocol.blocklist.19=user-agent
+
+services:
+  # --- Storage & Database ---
+  mongodb:
+    image: docker.io/library/mongo:6.0
+    restart: unless-stopped
+    command: ["mongod", "--bind_ip_all", "--storageEngine", "wiredTiger"]
+    mem_limit: 512m
+    volumes:
+      - mongodb-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 30s
+      retries: 12
+      start_period: 20s
+
+  influxdb:
+    image: docker.io/library/influxdb:2.7.4-alpine
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_ADMIN_PASSWORD:-adminpassword123}
+      DOCKER_INFLUXDB_INIT_ORG: opentwins
+      DOCKER_INFLUXDB_INIT_BUCKET: default
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_TOKEN:-openegiz-default-secret-token-2026}
+    ports:
+      - "${OPENEGIZ_BIND:-0.0.0.0}:${INFLUXDB_PORT:-8086}:8086"
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+      - influxdb-config:/etc/influxdb2
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # --- Messaging & Telemetry Bus ---
+  mosquitto:
+    image: docker.io/library/eclipse-mosquitto:2.0.18
+    restart: unless-stopped
+    mem_limit: 64m
+    ports:
+      - "${OPENEGIZ_BIND:-0.0.0.0}:${MQTT_PORT:-1883}:1883"
+    volumes:
+      - ./config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto-data:/mosquitto/data
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -h localhost -t '$$SYS/broker/version' -C 1 -W 5 >/dev/null"]
+      interval: 10s
+      timeout: 10s
+      retries: 6
+
+  telegraf:
+    image: docker.io/library/telegraf:1.37-alpine
+    restart: unless-stopped
+    user: telegraf
+    mem_limit: 256m
+    environment:
+      INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:-openegiz-default-secret-token-2026}
+    volumes:
+      - ./config/telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    depends_on:
+      influxdb:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+
+  # --- Eclipse Ditto Core Services ---
+  policies:
+    <<: *ditto-service
+    image: docker.io/eclipse/ditto-policies:3.3.7
+    mem_limit: 768m
+    environment:
+      JVM_CMD_ARGS_ENV: -Xmx256m
+      TZ: UTC
+      BIND_HOSTNAME: 0.0.0.0
+      MONGO_DB_HOSTNAME: mongodb
+      JAVA_TOOL_OPTIONS: *ditto-java-options
+
+  things:
+    <<: *ditto-service
+    image: docker.io/eclipse/ditto-things:3.3.7
+    mem_limit: 768m
+    environment:
+      JVM_CMD_ARGS_ENV: -Xmx256m
+      TZ: UTC
+      BIND_HOSTNAME: 0.0.0.0
+      MONGO_DB_HOSTNAME: mongodb
+      JAVA_TOOL_OPTIONS: *ditto-java-options
+
+  things-search:
+    <<: *ditto-service
+    image: docker.io/eclipse/ditto-things-search:3.3.7
+    mem_limit: 768m
+    environment:
+      JVM_CMD_ARGS_ENV: -Xmx256m
+      TZ: UTC
+      BIND_HOSTNAME: 0.0.0.0
+      MONGO_DB_HOSTNAME: mongodb
+      JAVA_TOOL_OPTIONS: *ditto-java-options
+
+  connectivity:
+    <<: *ditto-service
+    image: docker.io/eclipse/ditto-connectivity:3.3.7
+    mem_limit: 896m
+    environment:
+      JVM_CMD_ARGS_ENV: -Xmx384m
+      TZ: UTC
+      BIND_HOSTNAME: 0.0.0.0
+      MONGO_DB_HOSTNAME: mongodb
+      JAVA_TOOL_OPTIONS: *ditto-java-options
+
+  gateway:
+    <<: *ditto-service
+    image: docker.io/eclipse/ditto-gateway:3.3.7
+    mem_limit: 768m
+    environment:
+      JVM_CMD_ARGS_ENV: -Xmx256m
+      TZ: UTC
+      BIND_HOSTNAME: 0.0.0.0
+      ENABLE_PRE_AUTHENTICATION: "true"
+      DEVOPS_SECURED: "true"
+      DEVOPS_AUTHENTICATION_METHOD: basic
+      DEVOPS_PASSWORD: ${DITTO_DEVOPS_PASSWORD:-devops}
+      DEVOPS_STATUS_SECURED: "true"
+      STATUS_AUTHENTICATION_METHOD: basic
+      STATUS_PASSWORD: ${DITTO_DEVOPS_PASSWORD:-devops}
+      JAVA_TOOL_OPTIONS: *ditto-java-options
+
+  ditto-nginx:
+    image: docker.io/library/nginx:1.25-alpine
+    restart: unless-stopped
+    mem_limit: 64m
+    environment:
+      DITTO_PASSWORD: ${DITTO_PASSWORD:-ditto}
+      DITTO_DEVOPS_PASSWORD: ${DITTO_DEVOPS_PASSWORD:-devops}
+    ports:
+      - "${OPENEGIZ_BIND:-0.0.0.0}:${DITTO_PORT:-8082}:80"
+    volumes:
+      - ./deploy/compose/ditto/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/compose/ditto/nginx-cors.conf:/etc/nginx/nginx-cors.conf:ro
+      - ./deploy/compose/ditto/40-htpasswd.sh:/docker-entrypoint.d/40-htpasswd.sh:ro
+      - ./deploy/compose/ditto/index.html:/etc/nginx/html/index.html:ro
+      - ./deploy/compose/ditto/ditto-up.svg:/etc/nginx/html/ditto-up.svg:ro
+      - ./deploy/compose/ditto/ditto-down.svg:/etc/nginx/html/ditto-down.svg:ro
+    depends_on:
+      gateway:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  init:
+    image: docker.io/curlimages/curl:8.10.1
+    restart: "no"
+    entrypoint: ["/bin/sh", "/init/setup.sh"]
+    environment:
+      DITTO_PASSWORD: ${DITTO_PASSWORD:-ditto}
+      DITTO_DEVOPS_PASSWORD: ${DITTO_DEVOPS_PASSWORD:-devops}
+    volumes:
+      - ./deploy/compose/init:/init:ro
+    depends_on:
+      ditto-nginx:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+
+  # --- Analytical Dashboards (Grafana) ---
+  grafana:
+    image: docker.io/grafana/grafana:12.3.0
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+      INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:-openegiz-default-secret-token-2026}
+      DITTO_PASSWORD: ${DITTO_PASSWORD:-ditto}
+    ports:
+      - "${OPENEGIZ_BIND:-0.0.0.0}:${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 120s
+
+  # --- Mine Physics Simulator & What-If Scenario Server ---
+  mine-simulator:
+    build:
+      context: .
+      dockerfile: simulator/Dockerfile
+    image: openegiz/mine-simulator:latest
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "1883"
+      MQTT_TOPIC_PREFIX: telemetry
+      DITTO_URL: http://ditto-nginx:80
+      DITTO_USER: ditto
+      DITTO_PASSWORD: ${DITTO_PASSWORD:-ditto}
+      DITTO_NAMESPACE: org.openegiz.mine
+      SIM_INTERVAL: ${SIM_INTERVAL:-1.0}
+      SIM_SPEEDUP: ${SIM_SPEEDUP:-5.0}
+      SIM_PORT: "8000"
+    ports:
+      - "${OPENEGIZ_BIND:-0.0.0.0}:${SIM_PORT:-8000}:8000"
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+
+  # --- 3D WebGL / GIS Interactive Control Center ---
+  visualizer:
+    build:
+      context: .
+      dockerfile: visualizer/Dockerfile
+    image: openegiz/mine-visualizer:latest
+    restart: unless-stopped
+    mem_limit: 256m
+    ports:
+      - "${OPENEGIZ_BIND:-0.0.0.0}:${VISUALIZER_PORT:-8080}:8080"
+    depends_on:
+      - mine-simulator
+      - ditto-nginx
+
+volumes:
+  mongodb-data:
+  influxdb-data:
+  influxdb-config:
+  mosquitto-data:
+  grafana-data:
