@@ -1,5 +1,10 @@
 import json
 import math
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "simulator"))
+import mine_geometry as geo  # noqa: E402
 
 def generate_ore_blocks():
     blocks = {
@@ -116,272 +121,136 @@ def generate_ore_blocks():
             "coordinates": [76.930, 43.214, 260]
         }
     }
+    for bid, blk in blocks.items():
+        blk["coordinates"] = geo.block_lonlat(bid)
     with open("data/ore_blocks.json", "w", encoding="utf-8") as f:
         json.dump(blocks, f, ensure_ascii=False, indent=2)
     print("Created data/ore_blocks.json with 8 blocks")
 
+
+def _ring_lonlat(r: float, elev: float, steps: int = 72):
+    pts = []
+    for i in range(steps + 1):
+        th = 2 * math.pi * i / steps
+        x, y = geo.polar_xy(r, th)
+        pts.append(geo.to_lonlat_elev((x, y, elev)))
+    return pts
+
+
+def _line_feature(fid, name, pts_local, props=None):
+    coords = [geo.to_lonlat_elev(p) for p in pts_local]
+    length = sum(math.dist(pts_local[i], pts_local[i + 1]) for i in range(len(pts_local) - 1))
+    horiz = sum(math.hypot(pts_local[i + 1][0] - pts_local[i][0], pts_local[i + 1][1] - pts_local[i][1])
+                for i in range(len(pts_local) - 1))
+    dz = abs(pts_local[-1][2] - pts_local[0][2])
+    p = {
+        "id": fid,
+        "name": name,
+        "type": "haul_road",
+        "length_m": round(length, 1),
+        "gradient_pct": round(dz / horiz * 100.0, 1) if horiz > 0 else 0.0,
+    }
+    p.update(props or {})
+    return {"type": "Feature", "properties": p, "geometry": {"type": "LineString", "coordinates": coords}}
+
+
 def generate_mine_map():
-    # Pit road network graph connecting crusher, stockpile, waste dump and excavator loading points
+    """GeoJSON из единой геометрии simulator/mine_geometry.py"""
     features = []
 
-    # 1. Primary Crusher Point
-    features.append({
-        "type": "Feature",
-        "properties": {
-            "id": "crusher-01",
-            "name": "Приёмный бункер дробилки ДК-01",
-            "type": "crusher",
-            "elevation": 460.0,
-            "capacity_tph": 1200
-        },
-        "geometry": {
-            "type": "Point",
-            "coordinates": [76.9250, 43.2350, 460.0]
-        }
-    })
+    pois = [
+        ("crusher-01", "Приёмный бункер дробилки ДК-01", "crusher", {"capacity_tph": 1200}),
+        ("stockpile-01", "Склад усреднения руды СУ-01", "stockpile", {"capacity_t": 50000}),
+        ("waste-dump-01", "Северный отвал вскрышных пород ОВ-01", "waste_dump", {}),
+    ]
+    for fid, name, ftype, extra in pois:
+        c = geo.facility_lonlat(fid)
+        props = {"id": fid, "name": name, "type": ftype, "elevation": c[2]}
+        props.update(extra)
+        features.append({"type": "Feature", "properties": props, "geometry": {"type": "Point", "coordinates": c}})
 
-    # 2. Blending Stockpile Point
-    features.append({
-        "type": "Feature",
-        "properties": {
-            "id": "stockpile-01",
-            "name": "Склад усреднения руды СУ-01",
-            "type": "stockpile",
-            "elevation": 455.0,
-            "capacity_t": 50000
-        },
-        "geometry": {
-            "type": "Point",
-            "coordinates": [76.9300, 43.2380, 455.0]
-        }
-    })
-
-    # 3. Waste Dump Point
-    features.append({
-        "type": "Feature",
-        "properties": {
-            "id": "waste-dump-01",
-            "name": "Северный отвал вскрышных пород ОВ-01",
-            "type": "waste_dump",
-            "elevation": 470.0
-        },
-        "geometry": {
-            "type": "Point",
-            "coordinates": [76.9150, 43.2400, 470.0]
-        }
-    })
-
-    # 4. Excavators Loading Points
     excavator_points = [
-        ("excavator-01", "ЭКГ-15 №1 (Богатый забой 420м)", [76.9200, 43.2300, 420.0], "block-01", 1.65),
-        ("excavator-02", "ЭКГ-15 №2 (Высокосортный 380м)", [76.9220, 43.2260, 380.0], "block-03", 1.85),
-        ("excavator-03", "ЭКГ-15 №3 (Балансовый 340м)", [76.9250, 43.2220, 340.0], "block-05", 1.05),
-        ("excavator-04", "ЭКГ-15 №4 (Глубокий горизонт 300м)", [76.9280, 43.2180, 300.0], "block-07", 1.45)
+        ("excavator-01", "ЭКГ-15 №1 (Богатый забой 420м)", "block-01", 1.65),
+        ("excavator-02", "ЭКГ-15 №2 (Высокосортный 380м)", "block-03", 1.85),
+        ("excavator-03", "ЭКГ-15 №3 (Балансовый 340м)", "block-05", 1.05),
+        ("excavator-04", "ЭКГ-15 №4 (Глубокий горизонт 300м)", "block-07", 1.45),
     ]
-
-    for eid, name, coords, blk, grade in excavator_points:
+    for eid, name, blk, grade in excavator_points:
+        c = geo.excavator_lonlat(eid)
         features.append({
             "type": "Feature",
-            "properties": {
-                "id": eid,
-                "name": name,
-                "type": "excavator",
-                "block_id": blk,
-                "copper_grade": grade,
-                "bucket_capacity_m3": 15.0,
-                "elevation": coords[2]
-            },
-            "geometry": {
-                "type": "Point",
-                "coordinates": coords
-            }
+            "properties": {"id": eid, "name": name, "type": "excavator", "block_id": blk,
+                           "copper_grade": grade, "bucket_capacity_m3": 15.0, "elevation": c[2]},
+            "geometry": {"type": "Point", "coordinates": c},
         })
 
-    # 5. Pit Bench Contours (Polygon boundaries for 3D visualizer)
-    benches = [
-        (460, 0.007, 0.005, "#3d4b66", "Поверхность карьера (+460м)"),
-        (420, 0.006, 0.0045, "#4a5d80", "Горизонт разработки (+420м)"),
-        (380, 0.005, 0.004, "#5a7099", "Горизонт разработки (+380м)"),
-        (340, 0.004, 0.0035, "#6884b3", "Горизонт разработки (+340м)"),
-        (300, 0.003, 0.0028, "#799acd", "Горизонт разработки (+300м)"),
-        (260, 0.002, 0.002, "#8fb2e6", "Дно карьера (+260м)")
-    ]
-
-    center_lon, center_lat = 76.9230, 43.2260
-    for elev, rx, ry, color, name in benches:
-        pts = []
-        steps = 32
-        for i in range(steps + 1):
-            angle = 2 * math.pi * i / steps
-            px = center_lon + rx * math.cos(angle)
-            py = center_lat + ry * math.sin(angle)
-            pts.append([round(px, 6), round(py, 6), elev])
+    # Контуры уступов: площадка между подошвой (toe) и бровкой (crest)
+    for b in geo.BENCHES:
+        outer = _ring_lonlat(b["toe"] or b["crest"] + 300.0, b["elev"])
+        rings = [outer]
+        if b["crest"] > 0:
+            rings.append(list(reversed(_ring_lonlat(b["crest"], b["elev"]))))
         features.append({
             "type": "Feature",
-            "properties": {
-                "name": name,
-                "type": "bench_contour",
-                "elevation": elev,
-                "color": color
-            },
-            "geometry": {
-                "type": "Polygon",
-                "coordinates": [pts]
-            }
+            "properties": {"name": b["name"], "type": "bench", "elevation": b["elev"],
+                           "toe_radius_m": b["toe"], "crest_radius_m": b["crest"]},
+            "geometry": {"type": "Polygon", "coordinates": rings},
         })
 
-    # 6. Haul Road Network (3D Segments with distance, grade % and speed limit)
-    # Graph edges connecting Crusher <-> Junctions <-> Excavator faces
-    routes = [
-        # Crusher to Surface Main Junction
-        {
-            "id": "road-crusher-junc",
-            "name": "Подъезд к дробилке",
-            "from": "crusher-01",
-            "to": "junc-surface",
-            "gradient_pct": 1.5,
-            "max_speed_kmh": 40.0,
-            "length_m": 350.0,
-            "coords": [[76.9250, 43.2350, 460.0], [76.9240, 43.2330, 458.0], [76.9230, 43.2320, 455.0]]
-        },
-        # Main Haul Ramp 1 (Surface 455m -> Horizon 420m) - Grade 8.5%
-        {
-            "id": "road-ramp-420",
-            "name": "Главный съезд (455м -> 420м)",
-            "from": "junc-surface",
-            "to": "junc-420",
-            "gradient_pct": 8.5,
-            "max_speed_kmh": 35.0,
-            "length_m": 420.0,
-            "is_main_ramp": True,
-            "coords": [[76.9230, 43.2320, 455.0], [76.9215, 43.2315, 438.0], [76.9205, 43.2310, 420.0]]
-        },
-        # Spur to EX-01
-        {
-            "id": "road-spur-ex01",
-            "name": "Забойный заезд ЭКГ-01 (420м)",
-            "from": "junc-420",
-            "to": "excavator-01",
-            "gradient_pct": 0.5,
-            "max_speed_kmh": 25.0,
-            "length_m": 120.0,
-            "coords": [[76.9205, 43.2310, 420.0], [76.9200, 43.2300, 420.0]]
-        },
-        # Haul Ramp 2 (Horizon 420m -> Horizon 380m) - Grade 9.0%
-        {
-            "id": "road-ramp-380",
-            "name": "Внутрикарьерный съезд (420м -> 380м)",
-            "from": "junc-420",
-            "to": "junc-380",
-            "gradient_pct": 9.0,
-            "max_speed_kmh": 32.0,
-            "length_m": 460.0,
-            "is_main_ramp": True,
-            "coords": [[76.9205, 43.2310, 420.0], [76.9210, 43.2285, 400.0], [76.9215, 43.2270, 380.0]]
-        },
-        # Spur to EX-02
-        {
-            "id": "road-spur-ex02",
-            "name": "Забойный заезд ЭКГ-02 (380м)",
-            "from": "junc-380",
-            "to": "excavator-02",
-            "gradient_pct": 1.0,
-            "max_speed_kmh": 25.0,
-            "length_m": 140.0,
-            "coords": [[76.9215, 43.2270, 380.0], [76.9220, 43.2260, 380.0]]
-        },
-        # Haul Ramp 3 (Horizon 380m -> Horizon 340m) - Grade 8.8%
-        {
-            "id": "road-ramp-340",
-            "name": "Внутрикарьерный съезд (380м -> 340м)",
-            "from": "junc-380",
-            "to": "junc-340",
-            "gradient_pct": 8.8,
-            "max_speed_kmh": 30.0,
-            "length_m": 480.0,
-            "is_main_ramp": True,
-            "coords": [[76.9215, 43.2270, 380.0], [76.9230, 43.2245, 360.0], [76.9245, 43.2230, 340.0]]
-        },
-        # Spur to EX-03
-        {
-            "id": "road-spur-ex03",
-            "name": "Забойный заезд ЭКГ-03 (340м)",
-            "from": "junc-340",
-            "to": "excavator-03",
-            "gradient_pct": 0.5,
-            "max_speed_kmh": 25.0,
-            "length_m": 110.0,
-            "coords": [[76.9245, 43.2230, 340.0], [76.9250, 43.2220, 340.0]]
-        },
-        # Haul Ramp 4 (Horizon 340m -> Horizon 300m) - Grade 9.2%
-        {
-            "id": "road-ramp-300",
-            "name": "Внутрикарьерный съезд (340м -> 300м)",
-            "from": "junc-340",
-            "to": "junc-300",
-            "gradient_pct": 9.2,
-            "max_speed_kmh": 28.0,
-            "length_m": 450.0,
-            "is_main_ramp": True,
-            "coords": [[76.9245, 43.2230, 340.0], [76.9260, 43.2205, 320.0], [76.9275, 43.2190, 300.0]]
-        },
-        # Spur to EX-04
-        {
-            "id": "road-spur-ex04",
-            "name": "Забойный заезд ЭКГ-04 (300м)",
-            "from": "junc-300",
-            "to": "excavator-04",
-            "gradient_pct": 0.8,
-            "max_speed_kmh": 25.0,
-            "length_m": 130.0,
-            "coords": [[76.9275, 43.2190, 300.0], [76.9280, 43.2180, 300.0]]
-        },
-        # Spur from surface junc to Stockpile
-        {
-            "id": "road-spur-stockpile",
-            "name": "Трасса на склад усреднения",
-            "from": "junc-surface",
-            "to": "stockpile-01",
-            "gradient_pct": 1.2,
-            "max_speed_kmh": 35.0,
-            "length_m": 520.0,
-            "coords": [[76.9230, 43.2320, 455.0], [76.9270, 43.2355, 455.0], [76.9300, 43.2380, 455.0]]
-        }
-    ]
-
-    for r in routes:
+    # Рудные блоки как сектора площадок
+    for bid in geo.BLOCK_LAYOUT:
+        s = geo.block_sector(bid)
+        n = 16
+        outer, inner = [], []
+        for i in range(n + 1):
+            th = s["theta_start"] + (s["theta_end"] - s["theta_start"]) * i / n
+            outer.append(geo.to_lonlat_elev((*geo.polar_xy(s["r_outer"], th), s["elev"])))
+            inner.append(geo.to_lonlat_elev((*geo.polar_xy(s["r_inner"], th), s["elev"])))
+        ring = outer + list(reversed(inner)) + [outer[0]]
         features.append({
             "type": "Feature",
-            "properties": {
-                "id": r["id"],
-                "name": r["name"],
-                "type": "haul_road",
-                "from_node": r["from"],
-                "to_node": r["to"],
-                "gradient_pct": r["gradient_pct"],
-                "max_speed_kmh": r["max_speed_kmh"],
-                "length_m": r["length_m"],
-                "is_main_ramp": r.get("is_main_ramp", False)
-            },
-            "geometry": {
-                "type": "LineString",
-                "coordinates": r["coords"]
-            }
+            "properties": {"id": bid, "type": "ore_block", "elevation": s["elev"]},
+            "geometry": {"type": "Polygon", "coordinates": [ring]},
         })
+
+    # Главный спиральный съезд: участки между точками примыкания уступов
+    ramp = geo.build_ramp()
+    pts = ramp["points"]
+    prev_idx, prev_node = 0, "crusher-01"
+    for elev in sorted(ramp["junctions"].keys(), reverse=True):
+        j = ramp["junctions"][elev]["index"]
+        node = f"junc-{elev}"
+        features.append(_line_feature(
+            f"road-ramp-{elev}", f"Съезд → горизонт +{elev} м", pts[prev_idx:j + 1],
+            {"from_node": prev_node, "to_node": node, "is_main_ramp": True, "max_speed_kmh": 35.0}))
+        prev_idx, prev_node = j, node
+
+    # Забойные дороги от точки примыкания к экскаватору
+    for eid, lay in geo.EXCAVATOR_LAYOUT.items():
+        route = geo.haul_route(eid)
+        n_bench = route.seg_types.index(next(t for t in route.seg_types if t != "bench"))
+        bench_pts = route.points[: n_bench + 1]
+        features.append(_line_feature(
+            f"road-spur-{eid}", f"Забойная дорога {eid} (+{int(lay['elev'])} м)", list(reversed(bench_pts)),
+            {"from_node": f"junc-{int(lay['elev'])}", "to_node": eid, "is_main_ramp": False,
+             "max_speed_kmh": 28.0, "haul_route_length_m": round(route.length_m, 1)}))
+
+    # Поверхностная трасса дробилка -> склад
+    features.append(_line_feature(
+        "road-spur-stockpile", "Трасса на склад усреднения",
+        [geo.facility_local("crusher-01"), geo.facility_local("stockpile-01")],
+        {"from_node": "crusher-01", "to_node": "stockpile-01", "is_main_ramp": False, "max_speed_kmh": 35.0}))
 
     geojson = {
         "type": "FeatureCollection",
         "name": "OpenEgiz_OpenPit_Mine_Map",
-        "crs": {
-            "type": "name",
-            "properties": {"name": "urn:ogc:def:crs:OGC:1.3:CRS84"}
-        },
-        "features": features
+        "crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:OGC:1.3:CRS84"}},
+        "features": features,
     }
-
     with open("data/mine_map.geojson", "w", encoding="utf-8") as f:
-        json.dump(geojson, f, ensure_ascii=False, indent=2)
-    print("Created data/mine_map.geojson with POIs, benches, and road network graph")
+        json.dump(geojson, f, ensure_ascii=False, indent=1)
+    print("Created data/mine_map.geojson with POIs, benches, blocks and road network graph")
+
 
 if __name__ == "__main__":
     generate_ore_blocks()

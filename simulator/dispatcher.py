@@ -11,6 +11,9 @@ from physics_engine import (
     calculate_speed_and_fuel,
     calculate_shovel_loading_cycle
 )
+import mine_geometry as geo
+
+QUEUE_SPACING_M = 28.0  # интервал между самосвалами в очереди
 
 log = logging.getLogger("dispatcher")
 
@@ -28,9 +31,12 @@ class HaulTruck:
         self.grade_cu = 0.0
         self.grade_fe = 0.0
         self.speed_kmh = 0.0
-        self.route_progress = 0.0  # 0.0 to 1.0
-        self.current_route_id = "road-ramp-420"
+        self.route_progress = 0.0  # 0.0 (забой) .. 1.0 (дробилка)
+        self.current_route_id = "route-excavator-01"
         self.current_coordinates = [76.9200, 43.2300, 420.0]
+        self.local_position = [0.0, 0.0, 420.0]  # метры, локальная СК карьера
+        self.heading = 0.0  # рад, направление движения в плане
+        self.grade_pct = 0.0  # текущий уклон по ходу движения
         self.fuel_litres = (initial_fuel_pct / 100.0) * TRUCK_TANK_CAPACITY_L
         self.trips_completed = 0
         self.total_tonnes_hauled = 0.0
@@ -51,8 +57,12 @@ class HaulTruck:
             "grade_cu": round(self.grade_cu, 3),
             "grade_fe": round(self.grade_fe, 2),
             "speed_kmh": round(self.speed_kmh, 1),
-            "route_progress": round(self.route_progress, 3),
+            "route_progress": round(self.route_progress, 4),
+            "route_id": self.current_route_id,
             "coordinates": self.current_coordinates,
+            "local_position": [round(c, 1) for c in self.local_position],
+            "heading": round(self.heading, 3),
+            "grade_pct": round(self.grade_pct, 1),
             "fuel_pct": self.fuel_pct,
             "trips_completed": self.trips_completed,
             "total_tonnes_hauled": round(self.total_tonnes_hauled, 1)
@@ -111,11 +121,16 @@ class FleetDispatcher:
 
         # Initialize 4 Excavators
         self.excavators: Dict[str, Excavator] = {
-            "excavator-01": Excavator("excavator-01", "ЭКГ-15 №1 (Богатый 420м)", "block-01", 1.65, 24.5, 11, [76.9200, 43.2300, 420.0]),
-            "excavator-02": Excavator("excavator-02", "ЭКГ-15 №2 (Высокосортный 380м)", "block-03", 1.85, 26.2, 12, [76.9220, 43.2260, 380.0]),
-            "excavator-03": Excavator("excavator-03", "ЭКГ-15 №3 (Балансовый 340м)", "block-05", 1.05, 20.0, 10, [76.9250, 43.2220, 340.0]),
-            "excavator-04": Excavator("excavator-04", "ЭКГ-15 №4 (Глубокий 300м)", "block-07", 1.45, 23.0, 13, [76.9280, 43.2180, 300.0])
+            "excavator-01": Excavator("excavator-01", "ЭКГ-15 №1 (Богатый 420м)", "block-01", 1.65, 24.5, 11, geo.excavator_lonlat("excavator-01")),
+            "excavator-02": Excavator("excavator-02", "ЭКГ-15 №2 (Высокосортный 380м)", "block-03", 1.85, 26.2, 12, geo.excavator_lonlat("excavator-02")),
+            "excavator-03": Excavator("excavator-03", "ЭКГ-15 №3 (Балансовый 340м)", "block-05", 1.05, 20.0, 10, geo.excavator_lonlat("excavator-03")),
+            "excavator-04": Excavator("excavator-04", "ЭКГ-15 №4 (Глубокий 300м)", "block-07", 1.45, 23.0, 13, geo.excavator_lonlat("excavator-04"))
         }
+        # Маршруты рейсов (полилинии по съезду) для каждого забоя
+        self.routes = {eid: geo.haul_route(eid) for eid in self.excavators}
+
+        # Crusher queue must exist before trucks are staged
+        self.crusher_queue: List[str] = []
 
         # Initialize 12 Haul Trucks spread across the fleet
         self.trucks: Dict[str, HaulTruck] = {}
@@ -147,12 +162,12 @@ class FleetDispatcher:
                 truck.payload_t = 130.0
                 truck.grade_cu = self.excavators[assigned_exc].grade_cu
                 truck.grade_fe = self.excavators[assigned_exc].grade_fe
-                truck.current_coordinates = [76.9250, 43.2350, 460.0]
+                truck.route_progress = 1.0
+                self.crusher_queue.append(tid)
 
             self.trucks[tid] = truck
 
         # Crusher & Stockpile metrics
-        self.crusher_queue: List[str] = []
         self.crusher_active_truck: Optional[str] = None
         self.crusher_total_tonnes = 0.0
         self.crusher_weighted_cu_tonnes = 0.0
@@ -161,6 +176,16 @@ class FleetDispatcher:
 
         self.stockpile_total_tonnes = 12500.0
         self.stockpile_grade_cu = 1.30
+
+        self.update_truck_positions()
+
+    def retarget_truck(self, truck: "HaulTruck", new_exc: str):
+        """Переназначение забоя с сохранением расстояния до дробилки (общий участок съезда)."""
+        old = self.routes[truck.target_excavator]
+        new = self.routes[new_exc]
+        dist_to_crusher = (1.0 - truck.route_progress) * old.length_m
+        truck.target_excavator = new_exc
+        truck.route_progress = max(0.0, min(1.0, 1.0 - dist_to_crusher / new.length_m))
 
     def load_data(self):
         data_dir = os.path.join(os.path.dirname(__file__), "..", "data")
@@ -269,30 +294,20 @@ class FleetDispatcher:
 
         # 2. Update Haul Trucks movement & physics
         for truck_id, truck in self.trucks.items():
+            route = self.routes[truck.target_excavator]
             if truck.state == "hauling":
-                # Uphill loaded climb on haul ramp (+8.5% to +9.2%)
-                gradient = 8.8
-                speed_limit = 35.0
+                # Loaded climb: local grade of the actual road segment (bench road ~0 %, ramp ~9 %)
+                gradient = route.grade_pct_at(truck.route_progress)
+                speed_limit = 35.0 if route.segment_type_at(truck.route_progress) != "bench" else 28.0
                 gross_wt = TRUCK_EMPTY_WEIGHT_T + truck.payload_t
                 speed_kmh, fuel_rate = calculate_speed_and_fuel(
                     gross_wt, gradient, speed_limit, self.road_speed_factor, self.rng
                 )
                 truck.speed_kmh = speed_kmh
+                truck.grade_pct = gradient
                 distance_travelled_km = (speed_kmh / 3600.0) * dt
-                # Typical ramp length is ~1.4 km
-                truck.route_progress += distance_travelled_km / 1.4
+                truck.route_progress += distance_travelled_km / (route.length_m / 1000.0)
                 truck.fuel_litres = max(0.0, truck.fuel_litres - (fuel_rate / 3600.0) * dt)
-
-                # Interpolate 3D coordinates between shovel and crusher
-                exc = self.excavators[truck.target_excavator]
-                p0 = exc.coordinates
-                p1 = [76.9250, 43.2350, 460.0]  # Crusher
-                prog = min(1.0, truck.route_progress)
-                truck.current_coordinates = [
-                    round(p0[0] + (p1[0] - p0[0]) * prog, 6),
-                    round(p0[1] + (p1[1] - p0[1]) * prog, 6),
-                    round(p0[2] + (p1[2] - p0[2]) * prog, 1)
-                ]
 
                 if truck.route_progress >= 1.0:
                     truck.state = "queued_at_crusher"
@@ -301,29 +316,23 @@ class FleetDispatcher:
                     self.crusher_queue.append(truck.id)
 
             elif truck.state == "returning":
-                # Empty downhill descent (-8.8%)
-                gradient = -8.8
-                speed_limit = 40.0
+                # Empty descent: negative of the road grade towards the crusher
+                gradient = -route.grade_pct_at(truck.route_progress)
+                speed_limit = 40.0 if route.segment_type_at(truck.route_progress) != "bench" else 30.0
                 gross_wt = TRUCK_EMPTY_WEIGHT_T
                 speed_kmh, fuel_rate = calculate_speed_and_fuel(
                     gross_wt, gradient, speed_limit, self.road_speed_factor, self.rng
                 )
                 truck.speed_kmh = speed_kmh
+                truck.grade_pct = gradient
                 distance_travelled_km = (speed_kmh / 3600.0) * dt
-                truck.route_progress -= distance_travelled_km / 1.4
+                truck.route_progress -= distance_travelled_km / (route.length_m / 1000.0)
                 truck.fuel_litres = max(0.0, truck.fuel_litres - (fuel_rate / 3600.0) * dt)
 
-                exc = self.excavators[truck.target_excavator]
-                p0 = exc.coordinates
-                p1 = [76.9250, 43.2350, 460.0]
-                prog = max(0.0, truck.route_progress)
-                truck.current_coordinates = [
-                    round(p0[0] + (p1[0] - p0[0]) * prog, 6),
-                    round(p0[1] + (p1[1] - p0[1]) * prog, 6),
-                    round(p0[2] + (p1[2] - p0[2]) * prog, 1)
-                ]
-
                 if truck.route_progress <= 0.0:
+                    if self.excavators[truck.target_excavator].state == "breakdown":
+                        self.retarget_truck(truck, self.select_next_excavator(truck))
+                        continue
                     truck.state = "queued_at_excavator"
                     truck.route_progress = 0.0
                     truck.speed_kmh = 0.0
@@ -377,11 +386,64 @@ class FleetDispatcher:
         cutoff = self.sim_time - CRUSHER_WINDOW_SECONDS
         self.crusher_dump_log = [d for d in self.crusher_dump_log if d[0] >= cutoff]
 
+        # 4. Spatial placement of every truck on its haul road
+        self.update_truck_positions()
+
+    def update_truck_positions(self):
+        """Положение самосвалов на полилинии рейса (очереди выстраиваются вдоль дороги)."""
+        for truck in self.trucks.values():
+            route = self.routes[truck.target_excavator]
+            truck.current_route_id = f"route-{truck.target_excavator}"
+            slot = QUEUE_SPACING_M / route.length_m
+            st = truck.state
+            direction = 1.0
+            if st == "queued_at_excavator":
+                exc = self.excavators[truck.target_excavator]
+                idx = exc.queue.index(truck.id) if truck.id in exc.queue else 0
+                prog = slot * (idx + 1.5)
+                direction = -1.0
+            elif st in ("spotting", "loading"):
+                prog = 0.0
+                direction = -1.0
+            elif st == "queued_at_crusher":
+                idx = self.crusher_queue.index(truck.id) if truck.id in self.crusher_queue else 0
+                prog = 1.0 - slot * (idx + 1.5)
+            elif st in ("spotting_at_crusher", "dumping", "refueling"):
+                prog = 1.0
+            elif st == "returning":
+                prog = truck.route_progress
+                direction = -1.0
+            else:  # hauling
+                prog = truck.route_progress
+
+            prog = max(0.0, min(1.0, prog))
+            p = route.point_at(prog)
+            p_ahead = route.point_at(max(0.0, min(1.0, prog + direction * 0.004)))
+            if math.dist(p[:2], p_ahead[:2]) < 1e-3:
+                p_ahead = route.point_at(max(0.0, min(1.0, prog - direction * 0.004)))
+                truck.heading = math.atan2(p[1] - p_ahead[1], p[0] - p_ahead[0])
+            else:
+                truck.heading = math.atan2(p_ahead[1] - p[1], p_ahead[0] - p[0])
+            truck.local_position = list(p)
+            truck.current_coordinates = geo.to_lonlat_elev(p)
+            if st not in ("hauling", "returning"):
+                truck.grade_pct = 0.0
+
     # --- What-If Scenario Triggers ---
     def trigger_excavator_failure(self, exc_id: str = "excavator-01") -> dict:
         if exc_id in self.excavators:
             exc = self.excavators[exc_id]
             exc.state = "breakdown"
+            # Самосвал под погрузкой уезжает с тем, что успели загрузить
+            if exc.active_truck:
+                t = self.trucks[exc.active_truck]
+                exc.active_truck = None
+                if t.payload_t > 0:
+                    t.state = "hauling"
+                    t.route_progress = 0.0
+                else:
+                    exc.queue.insert(0, t.id)
+                    t.state = "queued_at_excavator"
             # Re-route waiting trucks immediately
             orphaned = list(exc.queue)
             exc.queue.clear()
@@ -389,7 +451,13 @@ class FleetDispatcher:
                 truck = self.trucks[tid]
                 new_exc = self.select_next_excavator(truck)
                 truck.target_excavator = new_exc
+                truck.route_progress = 0.0
                 self.excavators[new_exc].queue.append(tid)
+            # Порожние самосвалы, ехавшие к аварийному экскаватору, перенаправляются сразу
+            for truck in self.trucks.values():
+                if truck.state == "returning" and truck.target_excavator == exc_id:
+                    self.retarget_truck(truck, self.select_next_excavator(truck))
+            self.update_truck_positions()
 
             self.active_scenarios["excavator_failure"] = True
             self.active_scenarios["failed_excavator_id"] = exc_id
@@ -432,6 +500,12 @@ class FleetDispatcher:
     def get_full_snapshot(self) -> dict:
         rolling_cu, rolling_tph, total_t = self.get_crusher_rolling_stats()
         return {
+            "crusher": {
+                "queue_len": len(self.crusher_queue),
+                "active_truck": self.crusher_active_truck,
+                "state": "crushing" if self.crusher_active_truck else "idle"
+            },
+            "routes": {eid: round(r.length_m, 1) for eid, r in self.routes.items()},
             "sim_time_minutes": round(self.sim_time / 60.0, 1),
             "kpi": {
                 "crusher_total_tonnes": total_t,

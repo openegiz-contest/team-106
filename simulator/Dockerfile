@@ -6,12 +6,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY simulator/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy simulator code and data directory
-COPY . /app/simulator/
-COPY ../data /app/data/
+# Build context = repository root (see docker-compose.yml)
+COPY simulator/ /app/simulator/
+COPY data/ /app/data/
 
 WORKDIR /app/simulator
 

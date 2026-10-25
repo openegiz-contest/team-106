@@ -12,9 +12,9 @@
     "density_t_m3": 2.75,
     "assigned_excavator": "excavator-01",
     "coordinates": [
-      76.92,
-      43.23,
-      420
+      76.92253,
+      43.230081,
+      420.0
     ]
   },
   "block-02": {
@@ -30,9 +30,9 @@
     "density_t_m3": 2.65,
     "assigned_excavator": null,
     "coordinates": [
-      76.916,
-      43.228,
-      420
+      76.920042,
+      43.222276,
+      420.0
     ]
   },
   "block-03": {
@@ -48,9 +48,9 @@
     "density_t_m3": 2.8,
     "assigned_excavator": "excavator-02",
     "coordinates": [
-      76.922,
-      43.226,
-      380
+      76.927086,
+      43.228187,
+      380.0
     ]
   },
   "block-04": {
@@ -66,9 +66,9 @@
     "density_t_m3": 2.55,
     "assigned_excavator": null,
     "coordinates": [
-      76.918,
-      43.224,
-      380
+      76.91759,
+      43.225173,
+      380.0
     ]
   },
   "block-05": {
@@ -84,9 +84,9 @@
     "density_t_m3": 2.68,
     "assigned_excavator": "excavator-03",
     "coordinates": [
-      76.925,
-      43.222,
-      340
+      76.926652,
+      43.225012,
+      340.0
     ]
   },
   "block-06": {
@@ -102,9 +102,9 @@
     "density_t_m3": 2.5,
     "assigned_excavator": null,
     "coordinates": [
-      76.929,
-      43.224,
-      340
+      76.920934,
+      43.227983,
+      340.0
     ]
   },
   "block-07": {
@@ -120,9 +120,9 @@
     "density_t_m3": 2.78,
     "assigned_excavator": "excavator-04",
     "coordinates": [
-      76.928,
-      43.218,
-      300
+      76.921545,
+      43.224852,
+      300.0
     ]
   },
   "block-08": {
@@ -138,9 +138,9 @@
     "density_t_m3": 2.45,
     "assigned_excavator": null,
     "coordinates": [
-      76.93,
-      43.214,
-      260
+      76.923,
+      43.226,
+      260.0
     ]
   }
 }

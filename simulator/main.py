@@ -21,6 +21,7 @@ from config import (
 )
 from dispatcher import FleetDispatcher
 from ditto_bootstrap import bootstrap_ditto
+import mine_geometry
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("simulator-main")
@@ -195,6 +196,12 @@ def health():
 def get_fleet_state():
     """Returns complete real-time spatial and physical state of all mine entities"""
     return dispatcher.get_full_snapshot()
+
+
+@app.get("/api/map")
+def get_mine_map():
+    """Pit geometry (benches, spiral haul ramp, bench roads, faces, facilities) in local metres"""
+    return mine_geometry.map_payload()
 
 
 @app.get("/api/scenario/status")

@@ -127,21 +127,39 @@
     <section class="viewport-section">
       <div class="viewport-toolbar">
         <div class="view-modes">
-          <button id="btn-view-3d" class="btn-toggle active">3D Режим</button>
-          <button id="btn-view-top" class="btn-toggle">Вид сверху (2D ГИС)</button>
-          <button id="btn-view-reset" class="btn-toggle">Сброс камеры</button>
+          <button id="btn-view-3d" class="btn-toggle active" title="Общий изометрический вид карьера">3D Обзор</button>
+          <button id="btn-view-top" class="btn-toggle" title="Ортографический план карьера (2D ГИС)">Вид сверху</button>
+          <button id="btn-view-crusher" class="btn-toggle" title="Фокус на приёмном бункере дробилки">Дробилка (ДК-01)</button>
+          <button id="btn-view-pit" class="btn-toggle" title="Фокус на активных забоях и экскаваторах">Забои карьера</button>
+          <button id="btn-view-follow" class="btn-toggle" title="Следить за выбранным самосвалом">Слежение</button>
+          <button id="btn-view-reset" class="btn-toggle" title="Сбросить ракурс камеры">Сброс</button>
+        </div>
+        <div class="layer-toggles">
+          <button id="btn-toggle-labels" class="btn-toggle active" title="Показать/скрыть 3D-метки объектов">🏷️ Метки</button>
+          <button id="btn-toggle-blocks" class="btn-toggle active" title="Показать/скрыть рудные блоки">🏔️ Блоки</button>
+          <button id="btn-toggle-roads" class="btn-toggle active" title="Показать/скрыть разметку серпантина">🛣️ Серпантин</button>
         </div>
         <div class="legend-bar">
-          <span class="legend-item"><span class="swatch swatch-rich"></span> Богатая руда (&gt;1.5% Cu)</span>
-          <span class="legend-item"><span class="swatch swatch-std"></span> Рядовая шихта (1.0–1.2%)</span>
-          <span class="legend-item"><span class="swatch swatch-lean"></span> Бедная руда (&lt;0.8%)</span>
-          <span class="legend-item"><span class="swatch swatch-truck"></span> Самосвалы БелАЗ</span>
+          <span class="legend-item"><span class="swatch swatch-rich"></span> Богатая (&gt;1.5% Cu)</span>
+          <span class="legend-item"><span class="swatch swatch-std"></span> Рядовая (1.0–1.2%)</span>
+          <span class="legend-item"><span class="swatch swatch-lean"></span> Бедная (&lt;0.8%)</span>
+          <span class="legend-item"><span class="swatch swatch-truck"></span> БелАЗ-75131</span>
         </div>
       </div>
 
       <!-- Canvas for WebGL / Three.js -->
       <div id="scene3d-container" class="scene3d-container">
         <!-- 3D canvas injected here -->
+        <div class="pit-hud-overlay">
+          <div class="depth-gauge">
+            <span class="hud-tag">Глубина карьера: 200 м</span>
+            <span class="hud-elev">+460 м ... +260 м (6 уступов)</span>
+          </div>
+          <div class="compass-widget">
+            <div class="compass-arrow" id="compass-arrow">▲</div>
+            <span>СЕВЕР</span>
+          </div>
+        </div>
       </div>
 
       <!-- Bottom Floating What-If Scenarios Panel -->

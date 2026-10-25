@@ -386,49 +386,114 @@ body.dark-theme {
 
 .viewport-toolbar {
   position: absolute;
-  top: 14px;
-  left: 18px;
-  right: 18px;
+  top: 12px;
+  left: 14px;
+  right: 14px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
   z-index: 10;
   pointer-events: none;
 }
 
-.view-modes, .legend-bar {
+.view-modes, .legend-bar, .layer-toggles {
   pointer-events: auto;
   background: var(--bg-surface-translucent);
   backdrop-filter: blur(8px);
-  padding: 6px 10px;
+  padding: 5px 8px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-color);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .btn-toggle {
   background: transparent;
   border: 1px solid transparent;
   color: var(--text-secondary);
-  font-size: 11.5px;
+  font-size: 10.5px;
   font-weight: 600;
-  padding: 5px 12px;
+  padding: 4px 8px;
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: all 0.2s;
+  white-space: nowrap;
 }
 
 .btn-toggle:hover {
   color: #fff;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .btn-toggle.active {
   background: var(--accent-blue);
   color: #fff;
   box-shadow: 0 0 12px rgba(41, 121, 255, 0.5);
+}
+
+.pit-hud-overlay {
+  position: absolute;
+  bottom: 85px;
+  left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.depth-gauge {
+  background: rgba(10, 15, 29, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--accent-cyan);
+  padding: 7px 12px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.depth-gauge .hud-tag {
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 9.5px;
+  letter-spacing: 0.6px;
+}
+
+.depth-gauge .hud-elev {
+  color: var(--accent-cyan);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 11.5px;
+  margin-top: 2px;
+}
+
+.compass-widget {
+  background: rgba(10, 15, 29, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-color);
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 8.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.compass-arrow {
+  color: var(--accent-red);
+  font-size: 13px;
+  line-height: 13px;
+  transition: transform 0.05s linear;
 }
 
 .legend-bar {
