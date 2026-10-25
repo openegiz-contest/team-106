@@ -214,7 +214,7 @@ def get_scenario_status():
 
 
 @app.post("/api/scenario/excavator-failure")
-def scenario_excavator_failure(req: ExcavatorFailureRequest):
+def scenario_excavator_failure(req: ExcavatorFailureRequest = ExcavatorFailureRequest()):
     """Scenario 1: Emergency breakdown of excavator in rich face, triggers automated truck rerouting"""
     res = dispatcher.trigger_excavator_failure(req.excavator_id)
     publish_telemetry()
@@ -222,7 +222,7 @@ def scenario_excavator_failure(req: ExcavatorFailureRequest):
 
 
 @app.post("/api/scenario/excavator-repair")
-def scenario_excavator_repair(req: ExcavatorFailureRequest):
+def scenario_excavator_repair(req: ExcavatorFailureRequest = ExcavatorFailureRequest()):
     """Repair an excavator and return it to active loading duty"""
     res = dispatcher.repair_excavator(req.excavator_id)
     publish_telemetry()
@@ -230,7 +230,7 @@ def scenario_excavator_repair(req: ExcavatorFailureRequest):
 
 
 @app.post("/api/scenario/dispatch-mode")
-def scenario_dispatch_mode(req: DispatchModeRequest):
+def scenario_dispatch_mode(req: DispatchModeRequest = DispatchModeRequest()):
     """Scenario 2: Switch dispatch mode (MAX_TONNAGE vs QUALITY_BLEND)"""
     res = dispatcher.set_dispatch_mode(req.mode)
     publish_telemetry()
@@ -238,7 +238,7 @@ def scenario_dispatch_mode(req: DispatchModeRequest):
 
 
 @app.post("/api/scenario/road-condition")
-def scenario_road_condition(req: RoadConditionRequest):
+def scenario_road_condition(req: RoadConditionRequest = RoadConditionRequest()):
     """Scenario 3: Winter road conditions (ice/snow) reducing ramp speeds by ~45%"""
     res = dispatcher.set_road_condition(req.condition, req.speed_factor)
     publish_telemetry()

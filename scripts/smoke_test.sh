@@ -31,16 +31,27 @@ check() {
     fi
 }
 
+# Ожидание готовности симулятора (до 60 секунд), если скрипт запущен сразу после docker compose up
+echo -n "Ожидание готовности ключевых сервисов... "
+for i in $(seq 1 30); do
+    if curl -s -f http://localhost:8000/health >/dev/null 2>&1; then
+        echo -e "${GREEN}[ Сервисы активны ]${NC}"
+        break
+    fi
+    echo -n "."
+    sleep 2
+done
+
 # 1. Проверка Docker Compose сервисов
 echo -e "\n${YELLOW}1. Проверка статуса контейнеров Docker:${NC}"
-check "Контейнер Eclipse Mosquitto (MQTT)" "docker compose ps mosquitto | grep -q 'Up'"
-check "Контейнер InfluxDB v2" "docker compose ps influxdb | grep -q 'Up'"
-check "Контейнер Telegraf" "docker compose ps telegraf | grep -q 'Up'"
-check "Контейнер Eclipse Ditto (Gateway)" "docker compose ps gateway | grep -q 'Up'"
-check "Контейнер Eclipse Ditto (Things)" "docker compose ps things | grep -q 'Up'"
-check "Контейнер Grafana" "docker compose ps grafana | grep -q 'Up'"
-check "Контейнер Mine Simulator" "docker compose ps mine-simulator | grep -q 'Up'"
-check "Контейнер 3D/ГИС Visualizer" "docker compose ps visualizer | grep -q 'Up'"
+check "Контейнер Eclipse Mosquitto (MQTT)" "docker compose ps mosquitto | grep -q -E 'Up|running'"
+check "Контейнер InfluxDB v2" "docker compose ps influxdb | grep -q -E 'Up|running'"
+check "Контейнер Telegraf" "docker compose ps telegraf | grep -q -E 'Up|running'"
+check "Контейнер Eclipse Ditto (Gateway)" "docker compose ps gateway | grep -q -E 'Up|running'"
+check "Контейнер Eclipse Ditto (Things)" "docker compose ps things | grep -q -E 'Up|running'"
+check "Контейнер Grafana" "docker compose ps grafana | grep -q -E 'Up|running'"
+check "Контейнер Mine Simulator" "docker compose ps mine-simulator | grep -q -E 'Up|running'"
+check "Контейнер 3D/ГИС Visualizer" "docker compose ps visualizer | grep -q -E 'Up|running'"
 
 # 2. Проверка сетевых эндпоинтов и портов
 echo -e "\n${YELLOW}2. Проверка доступности портов и API сервисов:${NC}"
