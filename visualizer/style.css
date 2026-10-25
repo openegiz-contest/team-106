@@ -156,15 +156,46 @@ body.dark-theme {
   overflow: hidden;
 }
 
-/* Left & Right Sidebars */
+/* Left & Right Sidebars with visible stylish scrollbar */
 .sidebar-kpi, .sidebar-inspector {
   background: var(--bg-surface);
   border-right: 1px solid var(--border-color);
-  padding: 18px;
+  padding: 14px 12px;
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
+  height: 100%;
+  max-height: calc(100vh - 64px);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 229, 255, 0.45) rgba(10, 16, 29, 0.8);
+}
+
+/* Custom WebKit Scrollbar (visible, polished, easy to drag) */
+.sidebar-kpi::-webkit-scrollbar,
+.sidebar-inspector::-webkit-scrollbar {
+  width: 7px;
+}
+
+.sidebar-kpi::-webkit-scrollbar-track,
+.sidebar-inspector::-webkit-scrollbar-track {
+  background: rgba(10, 15, 29, 0.85);
+  border-radius: 4px;
+  margin: 4px 0;
+}
+
+.sidebar-kpi::-webkit-scrollbar-thumb,
+.sidebar-inspector::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #00e5ff 0%, #2979ff 100%);
+  border-radius: 4px;
+  border: 1px solid rgba(0, 229, 255, 0.3);
+}
+
+.sidebar-kpi::-webkit-scrollbar-thumb:hover,
+.sidebar-inspector::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #18ffff 0%, #448aff 100%);
+  box-shadow: 0 0 10px rgba(0, 229, 255, 0.7);
 }
 
 .sidebar-inspector {
@@ -810,4 +841,40 @@ body.dark-theme {
   background: rgba(0, 229, 255, 0.1);
   color: #fff;
   border-color: rgba(0, 229, 255, 0.25);
+}
+
+/* Compact layout for smaller laptop screens */
+@media (max-height: 880px) {
+  .sidebar-kpi, .sidebar-inspector {
+    padding: 10px 8px;
+    gap: 8px;
+  }
+  .kpi-card {
+    padding: 10px;
+  }
+  .card-title {
+    font-size: 10.5px;
+    margin-bottom: 6px;
+  }
+  .huge-number {
+    font-size: 28px;
+  }
+  .corridor-bar {
+    margin: 6px 0 3px 0;
+  }
+  .metrics-grid {
+    gap: 6px;
+  }
+  .metric-card {
+    padding: 6px 8px;
+  }
+  .metric-val .num {
+    font-size: 16px;
+  }
+  .chart-container {
+    height: 110px !important;
+  }
+  .exc-item {
+    padding: 4px 8px;
+  }
 }
