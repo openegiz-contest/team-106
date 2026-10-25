@@ -159,31 +159,54 @@ function createBermFloorTexture() {
 
 function createHaulRoadTexture() {
   const canvas = document.createElement("canvas");
-  canvas.width = 128;
+  canvas.width = 256;
   canvas.height = 256;
   const ctx = canvas.getContext("2d");
 
-  // Compacted dark crushed rock / gravel road base
-  ctx.fillStyle = "#343029";
-  ctx.fillRect(0, 0, 128, 256);
+  // Engineered dark compacted basalt/gravel roadbed
+  ctx.fillStyle = "#2c2f38";
+  ctx.fillRect(0, 0, 256, 256);
 
-  // Heavy BelAZ dual-wheel tire tracks (worn darker ruts)
-  ctx.fillStyle = "#22201b";
-  ctx.fillRect(16, 0, 36, 256);
-  ctx.fillRect(76, 0, 36, 256);
+  // Outer safety shoulder strips (compacted light rock dust)
+  ctx.fillStyle = "#464a56";
+  ctx.fillRect(0, 0, 16, 256);
+  ctx.fillRect(240, 0, 16, 256);
 
-  // Blasted rock gravel speckles
+  // Heavy BelAZ tire tracks (rutted compacted asphalt)
+  ctx.fillStyle = "#1e2129";
+  ctx.fillRect(28, 0, 68, 256);
+  ctx.fillRect(160, 0, 68, 256);
+
+  // Bright yellow dashed centerline for quarry traffic safety
+  ctx.strokeStyle = "#ffd600";
+  ctx.lineWidth = 4;
+  ctx.setLineDash([22, 22]);
+  ctx.beginPath();
+  ctx.moveTo(128, 0);
+  ctx.lineTo(128, 256);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Solid white edge boundary lines
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.45)";
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(18, 0); ctx.lineTo(18, 256);
+  ctx.moveTo(238, 0); ctx.lineTo(238, 256);
+  ctx.stroke();
+
+  // Fine gravel speckles
   for (let i = 0; i < 600; i++) {
-    const x = Math.random() * 128;
+    const x = Math.random() * 256;
     const y = Math.random() * 256;
-    ctx.fillStyle = Math.random() > 0.5 ? "rgba(180, 160, 130, 0.22)" : "rgba(10, 10, 10, 0.35)";
+    ctx.fillStyle = Math.random() > 0.5 ? "rgba(180, 190, 210, 0.22)" : "rgba(10, 10, 15, 0.35)";
     ctx.fillRect(x, y, 1.5, 1.5);
   }
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(1, 40);
+  tex.repeat.set(1, 45);
   return tex;
 }
 
@@ -608,6 +631,39 @@ function buildRealisticPit() {
   scene.add(pitGroup);
 }
 
+// --- Pit Terrain Elevation Engine (Mathematical profile of the pit benches) ---
+function getPitWorldElevation(wx, wz) {
+  const lx = wx / SCALE_HORIZ;
+  const ly = -wz / SCALE_HORIZ;
+  const r = Math.sqrt((lx / SX) ** 2 + (ly / SY) ** 2);
+
+  // Surface plateau (+460m) outside rim
+  if (r >= BENCHES[0].crest) {
+    return (460.0 - 260.0) * SCALE_VERT;
+  }
+  // Bottom floor (+260m)
+  const bottomBench = BENCHES[BENCHES.length - 1];
+  if (r <= bottomBench.toe) {
+    return (bottomBench.elev - 260.0) * SCALE_VERT;
+  }
+
+  // Intermediate benches and slopes
+  for (let k = 0; k < BENCHES.length - 1; k++) {
+    const upper = BENCHES[k];
+    const lower = BENCHES[k + 1];
+    if (r >= lower.toe && r <= upper.crest) {
+      // Conical bench rock slope
+      const t = (r - lower.toe) / (upper.crest - lower.toe);
+      const elev = lower.elev + t * (upper.elev - lower.elev);
+      return (elev - 260.0) * SCALE_VERT;
+    } else if (r >= lower.crest && r < lower.toe) {
+      // Horizontal working berm floor
+      return (lower.elev - 260.0) * SCALE_VERT;
+    }
+  }
+  return 0;
+}
+
 // --- Helper: Generate Haul Road Curve exactly matching Pit Benches & Simulator ---
 function generateHaulRoadPoints() {
   const pts = [];
@@ -671,13 +727,14 @@ function generateHaulRoadPoints() {
   return pts;
 }
 
-// --- 2. Monolithic Cut-and-Fill Haul Road Shelf (Литой карьерный серпантин) ---
+// --- 2. Engineered Haul Road Shelf (Качественный карьерный съезд без клиппинга текстур) ---
 function buildHaulRoadRibbon() {
   roadGroup.clear();
 
   const roadCurvePoints = generateHaulRoadPoints();
 
-  const halfWidth = 10.5 * SCALE_HORIZ; // ~21m road width
+  const halfWidth = 7.5 * SCALE_HORIZ; // ~15m optimal road deck width for two-way BelAZ traffic
+
   const deckPositions = [];
   const deckUVs = [];
   const rockPositions = [];
@@ -688,33 +745,48 @@ function buildHaulRoadRibbon() {
     const pA = roadCurvePoints[i];
     const pB = roadCurvePoints[i + 1];
 
-    const dir = new THREE.Vector3().subVectors(pB, pA).normalize();
+    const dirA = new THREE.Vector3().subVectors(pB, pA).normalize();
     const up = new THREE.Vector3(0, 1, 0);
 
-    // Side normal: points towards pit interior (berm / plunge slope)
-    let nBerm = new THREE.Vector3().crossVectors(dir, up).normalize();
+    // Normal pointing towards the pit interior (pit-side safety berm)
+    let nBermA = new THREE.Vector3().crossVectors(dirA, up).normalize();
     const toCenterA = new THREE.Vector3(-pA.x, 0, -pA.z).normalize();
-    if (nBerm.dot(toCenterA) < 0) {
-      nBerm.negate();
+    if (nBermA.dot(toCenterA) < 0) {
+      nBermA.negate();
     }
-    const nWall = nBerm.clone().negate(); // points into mountain rock wall
+    const nWallA = nBermA.clone().negate(); // points into mountain rock highwall
 
-    // Cross-section vertices for slice A
-    // 1. Cut into mountain wall (+3.2m elevation into rock slope)
-    const vCutA = pA.clone().add(nWall.clone().multiplyScalar(halfWidth + 4.2)).add(new THREE.Vector3(0, 3.2, 0));
-    // 2. Inner road gutter
-    const vInnerA = pA.clone().add(nWall.clone().multiplyScalar(halfWidth)).add(new THREE.Vector3(0, 0.06, 0));
-    // 3. Centerline slightly cambered
-    const vCentA = pA.clone().add(new THREE.Vector3(0, 0.14, 0));
-    // 4. Outer road edge
-    const vOuterA = pA.clone().add(nBerm.clone().multiplyScalar(halfWidth)).add(new THREE.Vector3(0, 0.06, 0));
-    // 5. Safety rock berm crest (+1.35m height barrier)
-    const vBermA = pA.clone().add(nBerm.clone().multiplyScalar(halfWidth + 1.6)).add(new THREE.Vector3(0, 1.35, 0));
-    // 6. Rock toe plunging into lower terrace (-3.8m)
-    const vToeA = pA.clone().add(nBerm.clone().multiplyScalar(halfWidth + 5.2)).sub(new THREE.Vector3(0, 3.8, 0));
+    // Point A coordinates & ground heights
+    const posInnerA = pA.clone().add(nWallA.clone().multiplyScalar(halfWidth));
+    const posCentA  = pA.clone();
+    const posOuterA = pA.clone().add(nBermA.clone().multiplyScalar(halfWidth));
+
+    const groundInnerA = getPitWorldElevation(posInnerA.x, posInnerA.z);
+    const groundCentA  = getPitWorldElevation(posCentA.x, posCentA.z);
+
+    // Shelf elevation: guarantee deck sits cleanly above mountain cut
+    const deckYA = Math.max(pA.y + 0.35, groundInnerA + 0.28, groundCentA + 0.22);
+
+    const vInnerA = new THREE.Vector3(posInnerA.x, deckYA, posInnerA.z);
+    const vCentA  = new THREE.Vector3(posCentA.x,  deckYA + 0.12, posCentA.z); // camber crown
+    const vOuterA = new THREE.Vector3(posOuterA.x, deckYA, posOuterA.z);
+
+    // Inner drainage gutter & rock curb
+    const posGutterA = posInnerA.clone().add(nWallA.clone().multiplyScalar(1.6));
+    const groundGutterA = getPitWorldElevation(posGutterA.x, posGutterA.z);
+    const vGutterA = new THREE.Vector3(posGutterA.x, Math.max(deckYA + 0.55, groundGutterA + 0.20), posGutterA.z);
+
+    // Outer safety rock berm (вал безопасности 1.45м)
+    const posBermA = posOuterA.clone().add(nBermA.clone().multiplyScalar(1.6));
+    const vBermA = new THREE.Vector3(posBermA.x, deckYA + 1.45, posBermA.z);
+
+    // Outer plunge into lower terrace
+    const posToeA = posOuterA.clone().add(nBermA.clone().multiplyScalar(3.8));
+    const groundToeA = getPitWorldElevation(posToeA.x, posToeA.z);
+    const vToeA = new THREE.Vector3(posToeA.x, Math.min(deckYA - 0.45, groundToeA - 0.15), posToeA.z);
 
     // Next slice B
-    const dirB = (i + 2 < roadCurvePoints.length) ? new THREE.Vector3().subVectors(roadCurvePoints[i + 2], pB).normalize() : dir;
+    const dirB = (i + 2 < roadCurvePoints.length) ? new THREE.Vector3().subVectors(roadCurvePoints[i + 2], pB).normalize() : dirA;
     let nBermB = new THREE.Vector3().crossVectors(dirB, up).normalize();
     const toCenterB = new THREE.Vector3(-pB.x, 0, -pB.z).normalize();
     if (nBermB.dot(toCenterB) < 0) {
@@ -722,14 +794,31 @@ function buildHaulRoadRibbon() {
     }
     const nWallB = nBermB.clone().negate();
 
-    const vCutB = pB.clone().add(nWallB.clone().multiplyScalar(halfWidth + 4.2)).add(new THREE.Vector3(0, 3.2, 0));
-    const vInnerB = pB.clone().add(nWallB.clone().multiplyScalar(halfWidth)).add(new THREE.Vector3(0, 0.06, 0));
-    const vCentB = pB.clone().add(new THREE.Vector3(0, 0.14, 0));
-    const vOuterB = pB.clone().add(nBermB.clone().multiplyScalar(halfWidth)).add(new THREE.Vector3(0, 0.06, 0));
-    const vBermB = pB.clone().add(nBermB.clone().multiplyScalar(halfWidth + 1.6)).add(new THREE.Vector3(0, 1.35, 0));
-    const vToeB = pB.clone().add(nBermB.clone().multiplyScalar(halfWidth + 5.2)).sub(new THREE.Vector3(0, 3.8, 0));
+    const posInnerB = pB.clone().add(nWallB.clone().multiplyScalar(halfWidth));
+    const posCentB  = pB.clone();
+    const posOuterB = pB.clone().add(nBermB.clone().multiplyScalar(halfWidth));
 
-    // A. Road Deck (2 quads: inner-to-center and center-to-outer for natural camber)
+    const groundInnerB = getPitWorldElevation(posInnerB.x, posInnerB.z);
+    const groundCentB  = getPitWorldElevation(posCentB.x, posCentB.z);
+
+    const deckYB = Math.max(pB.y + 0.35, groundInnerB + 0.28, groundCentB + 0.22);
+
+    const vInnerB = new THREE.Vector3(posInnerB.x, deckYB, posInnerB.z);
+    const vCentB  = new THREE.Vector3(posCentB.x,  deckYB + 0.12, posCentB.z);
+    const vOuterB = new THREE.Vector3(posOuterB.x, deckYB, posOuterB.z);
+
+    const posGutterB = posInnerB.clone().add(nWallB.clone().multiplyScalar(1.6));
+    const groundGutterB = getPitWorldElevation(posGutterB.x, posGutterB.z);
+    const vGutterB = new THREE.Vector3(posGutterB.x, Math.max(deckYB + 0.55, groundGutterB + 0.20), posGutterB.z);
+
+    const posBermB = posOuterB.clone().add(nBermB.clone().multiplyScalar(1.6));
+    const vBermB = new THREE.Vector3(posBermB.x, deckYB + 1.45, posBermB.z);
+
+    const posToeB = posOuterB.clone().add(nBermB.clone().multiplyScalar(3.8));
+    const groundToeB = getPitWorldElevation(posToeB.x, posToeB.z);
+    const vToeB = new THREE.Vector3(posToeB.x, Math.min(deckYB - 0.45, groundToeB - 0.15), posToeB.z);
+
+    // A. Road Deck (2 quads: inner-to-center and center-to-outer with road camber)
     deckPositions.push(
       vInnerA.x, vInnerA.y, vInnerA.z,   vCentA.x, vCentA.y, vCentA.z,   vInnerB.x, vInnerB.y, vInnerB.z,
       vCentA.x, vCentA.y, vCentA.z,     vCentB.x, vCentB.y, vCentB.z,   vInnerB.x, vInnerB.y, vInnerB.z,
@@ -737,8 +826,8 @@ function buildHaulRoadRibbon() {
       vOuterA.x, vOuterA.y, vOuterA.z,   vOuterB.x, vOuterB.y, vOuterB.z, vCentB.x, vCentB.y, vCentB.z
     );
 
-    const uvV1 = (i / roadCurvePoints.length) * 50;
-    const uvV2 = ((i + 1) / roadCurvePoints.length) * 50;
+    const uvV1 = (i / roadCurvePoints.length) * 45;
+    const uvV2 = ((i + 1) / roadCurvePoints.length) * 45;
     deckUVs.push(
       0.0, uvV1,  0.5, uvV1,  0.0, uvV2,
       0.5, uvV1,  0.5, uvV2,  0.0, uvV2,
@@ -746,18 +835,18 @@ function buildHaulRoadRibbon() {
       1.0, uvV1,  1.0, uvV2,  0.5, uvV2
     );
 
-    // B. Monolithic Rock Structure:
-    // 1. Mountain wall cut slope (vCut -> vInner)
+    // B. Safety Rock Structures (Curb + Safety Barrier):
+    // 1. Inner rock curb (vInner -> vGutter)
     rockPositions.push(
-      vCutA.x, vCutA.y, vCutA.z,       vInnerA.x, vInnerA.y, vInnerA.z, vCutB.x, vCutB.y, vCutB.z,
-      vInnerA.x, vInnerA.y, vInnerA.z, vInnerB.x, vInnerB.y, vInnerB.z, vCutB.x, vCutB.y, vCutB.z
+      vInnerA.x, vInnerA.y, vInnerA.z,   vGutterA.x, vGutterA.y, vGutterA.z, vInnerB.x, vInnerB.y, vInnerB.z,
+      vGutterA.x, vGutterA.y, vGutterA.z, vGutterB.x, vGutterB.y, vGutterB.z, vInnerB.x, vInnerB.y, vInnerB.z
     );
     // 2. Safety berm inner slope (vOuter -> vBerm)
     rockPositions.push(
       vOuterA.x, vOuterA.y, vOuterA.z, vBermA.x, vBermA.y, vBermA.z,   vOuterB.x, vOuterB.y, vOuterB.z,
       vBermA.x, vBermA.y, vBermA.z,   vBermB.x, vBermB.y, vBermB.z,   vOuterB.x, vOuterB.y, vOuterB.z
     );
-    // 3. Safety berm outer plunge slope into pit (vBerm -> vToe)
+    // 3. Safety berm outer slope (vBerm -> vToe)
     rockPositions.push(
       vBermA.x, vBermA.y, vBermA.z,   vToeA.x, vToeA.y, vToeA.z,       vBermB.x, vBermB.y, vBermB.z,
       vToeA.x, vToeA.y, vToeA.z,       vToeB.x, vToeB.y, vToeB.z,       vBermB.x, vBermB.y, vBermB.z
@@ -769,12 +858,12 @@ function buildHaulRoadRibbon() {
       0, uvV1, 1, uvV1, 0, uvV2,  1, uvV1, 1, uvV2, 0, uvV2
     );
 
-    if (i % 6 === 0) {
-      guidePostPositions.push({ pos: vBermA.clone().add(new THREE.Vector3(0, 0.4, 0)), isAmber: (i % 12 === 0) });
+    if (i % 5 === 0) {
+      guidePostPositions.push({ pos: vBermA.clone().add(new THREE.Vector3(0, 0.5, 0)), isAmber: (i % 10 === 0) });
     }
   }
 
-  // 1. Road Surface Deck Mesh with Polygon Offset for seamless embed into rock
+  // 1. Road Surface Deck Mesh with Depth Offset
   const deckGeo = new THREE.BufferGeometry();
   deckGeo.setAttribute("position", new THREE.Float32BufferAttribute(deckPositions, 3));
   deckGeo.setAttribute("uv", new THREE.Float32BufferAttribute(deckUVs, 2));
@@ -782,18 +871,19 @@ function buildHaulRoadRibbon() {
 
   const roadMat = new THREE.MeshStandardMaterial({
     map: textures.road,
-    roughness: 0.86,
-    metalness: 0.08,
+    roughness: 0.82,
+    metalness: 0.10,
     polygonOffset: true,
-    polygonOffsetFactor: -1.0,
-    polygonOffsetUnits: -2.0,
+    polygonOffsetFactor: -4.0,
+    polygonOffsetUnits: -6.0,
     side: THREE.DoubleSide
   });
   const deckMesh = new THREE.Mesh(deckGeo, roadMat);
   deckMesh.receiveShadow = true;
+  deckMesh.renderOrder = 3;
   roadGroup.add(deckMesh);
 
-  // 2. Monolithic Bedrock Cut & Safety Berm Mesh (matches pit rock material)
+  // 2. Safety Berm Rock Mesh
   const rockGeo = new THREE.BufferGeometry();
   rockGeo.setAttribute("position", new THREE.Float32BufferAttribute(rockPositions, 3));
   rockGeo.setAttribute("uv", new THREE.Float32BufferAttribute(rockUVs, 2));
@@ -803,16 +893,20 @@ function buildHaulRoadRibbon() {
     map: textures.rock,
     roughness: 0.88,
     metalness: 0.12,
+    polygonOffset: true,
+    polygonOffsetFactor: -2.0,
+    polygonOffsetUnits: -3.0,
     side: THREE.DoubleSide
   });
   const rockMesh = new THREE.Mesh(rockGeo, rockMat);
   rockMesh.receiveShadow = true;
   rockMesh.castShadow = true;
+  rockMesh.renderOrder = 3;
   roadGroup.add(rockMesh);
 
   // 3. Heavy Mining Hazard Reflectors along Berm Ridge
   guidePostPositions.forEach(gp => {
-    const postGeo = new THREE.CylinderGeometry(0.22, 0.22, 1.4, 6);
+    const postGeo = new THREE.CylinderGeometry(0.24, 0.24, 1.5, 6);
     const postMat = new THREE.MeshBasicMaterial({ color: gp.isAmber ? 0xffd600 : 0xff1744 });
     const post = new THREE.Mesh(postGeo, postMat);
     post.position.copy(gp.pos);
@@ -1305,6 +1399,8 @@ function updateTrucks3D(trucksData) {
     } else {
       targetPos = lonLatToWorld(t.coordinates[0], t.coordinates[1], t.coordinates[2]);
     }
+    const groundY = getPitWorldElevation(targetPos.x, targetPos.z);
+    targetPos.y = Math.max(targetPos.y + 0.45, groundY + 0.45);
 
     // Seamless telemetry handoff
     if (!mesh.userData.startPos) {
@@ -1721,6 +1817,409 @@ function updateChart(gradeCu) {
   trendChart.update("none");
 }
 
+// --- 9b. Standalone Interactive Analytics Dashboard ---
+let dashBlendChartInstance = null;
+let dashOreBalanceChartInstance = null;
+let dashExcavatorChartInstance = null;
+let dashCycleChartInstance = null;
+
+function initAnalyticsDashboard() {
+  const blendCanvas = document.getElementById("dashBlendChart");
+  if (blendCanvas) {
+    const ctx = blendCanvas.getContext("2d");
+    dashBlendChartInstance = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: [],
+        datasets: [
+          {
+            label: "Фактическое содержание Cu",
+            data: [],
+            borderColor: "#00e676",
+            backgroundColor: "rgba(0, 230, 118, 0.12)",
+            fill: true,
+            tension: 0.35,
+            borderWidth: 2.4,
+            pointRadius: 2,
+            pointHoverRadius: 5
+          },
+          {
+            label: "Целевая уставка (1.05% Cu)",
+            data: [],
+            borderColor: "#ffd600",
+            borderDash: [5, 5],
+            borderWidth: 1.8,
+            fill: false,
+            pointRadius: 0
+          },
+          {
+            label: "Верхняя граница (1.10% Cu)",
+            data: [],
+            borderColor: "rgba(255, 23, 68, 0.75)",
+            borderDash: [3, 3],
+            borderWidth: 1.4,
+            fill: false,
+            pointRadius: 0
+          },
+          {
+            label: "Нижняя граница (1.00% Cu)",
+            data: [],
+            borderColor: "rgba(255, 23, 68, 0.75)",
+            borderDash: [3, 3],
+            borderWidth: 1.4,
+            fill: false,
+            pointRadius: 0
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        scales: {
+          y: {
+            min: 0.7,
+            max: 1.4,
+            grid: { color: "rgba(255, 255, 255, 0.06)" },
+            ticks: {
+              color: "#90caf9",
+              callback: v => v.toFixed(2) + "%"
+            }
+          },
+          x: {
+            grid: { color: "rgba(255, 255, 255, 0.04)" },
+            ticks: { color: "#78909c", maxTicksLimit: 8 }
+          }
+        },
+        plugins: {
+          legend: {
+            labels: { color: "#b0bec5", font: { size: 10.5 } }
+          }
+        }
+      }
+    });
+  }
+
+  const oreCanvas = document.getElementById("dashOreBalanceChart");
+  if (oreCanvas) {
+    const ctx = oreCanvas.getContext("2d");
+    dashOreBalanceChartInstance = new Chart(ctx, {
+      type: "doughnut",
+      data: {
+        labels: ["Богатая (>1.5%)", "Рядовая (1.0-1.5%)", "Бедная (<1.0%)", "Вскрыша"],
+        datasets: [{
+          data: [35, 45, 15, 5],
+          backgroundColor: ["#ab47bc", "#ffa726", "#29b6f6", "#78909c"],
+          borderWidth: 0
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: "62%",
+        plugins: {
+          legend: {
+            position: "right",
+            labels: { color: "#b0bec5", boxWidth: 12, font: { size: 10.5 } }
+          }
+        }
+      }
+    });
+  }
+
+  const excCanvas = document.getElementById("dashExcavatorChart");
+  if (excCanvas) {
+    const ctx = excCanvas.getContext("2d");
+    dashExcavatorChartInstance = new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels: ["ЭКГ-01", "ЭКГ-02", "ЭКГ-03", "ЭКГ-04", "ЭКГ-05"],
+        datasets: [{
+          label: "Отгрузка (т)",
+          data: [4500, 5200, 4800, 3900, 2230],
+          backgroundColor: ["#00e676", "#00e676", "#00e676", "#00e676", "#00e676"],
+          borderRadius: 4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          y: {
+            grid: { color: "rgba(255, 255, 255, 0.06)" },
+            ticks: { color: "#90caf9" }
+          },
+          x: {
+            grid: { display: false },
+            ticks: { color: "#b0bec5", font: { size: 10 } }
+          }
+        },
+        plugins: {
+          legend: { display: false }
+        }
+      }
+    });
+  }
+
+  const cycleCanvas = document.getElementById("dashCycleChart");
+  if (cycleCanvas) {
+    const ctx = cycleCanvas.getContext("2d");
+    dashCycleChartInstance = new Chart(ctx, {
+      type: "doughnut",
+      data: {
+        labels: ["Погрузка", "Подъём с грузом", "Разгрузка/бункер", "Порожний спуск", "Очередь"],
+        datasets: [{
+          data: [3.8, 8.4, 1.8, 4.2, 0.8],
+          backgroundColor: ["#ffd600", "#00e5ff", "#00e676", "#7c4dff", "#ff5252"],
+          borderWidth: 0
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: "62%",
+        plugins: {
+          legend: {
+            position: "right",
+            labels: { color: "#b0bec5", boxWidth: 10, font: { size: 9.5 } }
+          }
+        }
+      }
+    });
+  }
+}
+
+function updateAnalyticsDashboard(data) {
+  if (!data || !data.kpi) return;
+  const kpi = data.kpi;
+  const cuGrade = kpi.crusher_grade_cu;
+
+  // 1. KPI Cards
+  const elGrade = document.getElementById("dash-cu-grade");
+  if (elGrade) elGrade.textContent = cuGrade.toFixed(2);
+
+  const elGradeStatus = document.getElementById("dash-cu-status");
+  if (elGradeStatus) {
+    if (Math.abs(cuGrade - 1.05) <= 0.08) {
+      elGradeStatus.className = "kpi-sub highlight-good";
+      elGradeStatus.textContent = "Норма: 1.05 ± 0.05% Cu (Оптимальная шихта)";
+    } else if (cuGrade < 0.97) {
+      elGradeStatus.className = "kpi-sub";
+      elGradeStatus.style.color = "#ffa726";
+      elGradeStatus.textContent = "Разубоживание: < 0.97% Cu (Подайте богатую руду)";
+    } else {
+      elGradeStatus.className = "kpi-sub";
+      elGradeStatus.style.color = "#ff5252";
+      elGradeStatus.textContent = "Переобогащение: > 1.13% Cu (Подайте рядовую руду)";
+    }
+  }
+
+  const elTonnes = document.getElementById("dash-total-tonnes");
+  if (elTonnes) elTonnes.textContent = kpi.crusher_total_tonnes.toLocaleString();
+
+  const elPlanPct = document.getElementById("dash-plan-pct");
+  if (elPlanPct) {
+    const pct = ((kpi.crusher_total_tonnes / 25000) * 100).toFixed(1);
+    elPlanPct.textContent = `План смены: 25 000 т (${pct}%)`;
+  }
+
+  const elTph = document.getElementById("dash-rolling-tph");
+  if (elTph) elTph.textContent = kpi.crusher_rolling_tph.toFixed(0);
+
+  const elKtg = document.getElementById("dash-fleet-ktg");
+  if (elKtg) {
+    const active = kpi.active_trucks || 12;
+    elKtg.textContent = ((active / 12) * 100).toFixed(1);
+  }
+
+  // 2. Trend Line Chart
+  if (dashBlendChartInstance) {
+    const now = new Date().toLocaleTimeString();
+    dashBlendChartInstance.data.labels.push(now);
+    dashBlendChartInstance.data.datasets[0].data.push(cuGrade);
+    dashBlendChartInstance.data.datasets[1].data.push(1.05);
+    dashBlendChartInstance.data.datasets[2].data.push(1.10);
+    dashBlendChartInstance.data.datasets[3].data.push(1.00);
+
+    if (dashBlendChartInstance.data.labels.length > 35) {
+      dashBlendChartInstance.data.labels.shift();
+      dashBlendChartInstance.data.datasets[0].data.shift();
+      dashBlendChartInstance.data.datasets[1].data.shift();
+      dashBlendChartInstance.data.datasets[2].data.shift();
+      dashBlendChartInstance.data.datasets[3].data.shift();
+    }
+    dashBlendChartInstance.update("none");
+  }
+
+  // 3. Ore Balance Doughnut Chart
+  if (dashOreBalanceChartInstance && data.trucks) {
+    let richT = 0, commT = 0, leanT = 0, wasteT = 0;
+    data.trucks.forEach(t => {
+      const g = t.grade_cu || 1.05;
+      const p = t.payload_t || 130;
+      if (g >= 1.5) richT += p;
+      else if (g >= 1.0) commT += p;
+      else if (g >= 0.4) leanT += p;
+      else wasteT += p;
+    });
+    if (richT + commT + leanT + wasteT === 0) {
+      richT = 35; commT = 45; leanT = 15; wasteT = 5;
+    }
+    dashOreBalanceChartInstance.data.datasets[0].data = [richT, commT, leanT, wasteT];
+    dashOreBalanceChartInstance.update("none");
+  }
+
+  // 4. Excavator Productivity Bar Chart
+  if (dashExcavatorChartInstance && data.excavators) {
+    const excLabels = [];
+    const excTonnes = [];
+    const excColors = [];
+    data.excavators.forEach((e, idx) => {
+      excLabels.push(`${e.id.toUpperCase()}`);
+      const baseShare = [0.28, 0.26, 0.22, 0.16, 0.08][idx] || 0.2;
+      const tonnes = Math.round(kpi.crusher_total_tonnes * baseShare);
+      excTonnes.push(tonnes);
+      excColors.push(e.state === "breakdown" ? "#ff1744" : "#00e676");
+    });
+    dashExcavatorChartInstance.data.labels = excLabels;
+    dashExcavatorChartInstance.data.datasets[0].data = excTonnes;
+    dashExcavatorChartInstance.data.datasets[0].backgroundColor = excColors;
+    dashExcavatorChartInstance.update("none");
+  }
+
+  // 5. Truck Fleet Cycle Doughnut Chart
+  if (dashCycleChartInstance && data.trucks) {
+    let nLoading = 0, nHauling = 0, nDumping = 0, nReturning = 0, nQueued = 0;
+    data.trucks.forEach(t => {
+      if (t.state === "loading" || t.state === "spotting") nLoading++;
+      else if (t.state === "hauling") nHauling++;
+      else if (t.state === "dumping" || t.state === "spotting_at_crusher") nDumping++;
+      else if (t.state === "returning") nReturning++;
+      else nQueued++;
+    });
+    dashCycleChartInstance.data.datasets[0].data = [
+      nLoading || 2, nHauling || 5, nDumping || 1, nReturning || 3, nQueued || 1
+    ];
+    dashCycleChartInstance.update("none");
+  }
+
+  // 6. Mining Faces Summary Table
+  const tbody = document.getElementById("dash-table-body");
+  if (tbody && data.excavators) {
+    let rowsHtml = "";
+    data.excavators.forEach((e, idx) => {
+      const def = ORE_BLOCKS_DEF[e.block_id] || {};
+      const isBroken = e.state === "breakdown";
+      const statusBadge = isBroken
+        ? `<span class="badge" style="background: rgba(255,23,68,0.2); color: #ff5252; border: 1px solid rgba(255,23,68,0.4);">⚠️ АВАРИЯ</span>`
+        : (e.state === "loading"
+          ? `<span class="badge" style="background: rgba(0,230,118,0.2); color: #00e676; border: 1px solid rgba(0,230,118,0.4);">⚡ ПОГРУЗКА</span>`
+          : `<span class="badge" style="background: rgba(255,145,0,0.2); color: #ffa726; border: 1px solid rgba(255,145,0,0.4);">⏳ ОЖИДАНИЕ</span>`);
+
+      const oreColor = e.grade_cu >= 1.5 ? '#d500f9' : (e.grade_cu >= 1.0 ? '#ff9100' : '#29b6f6');
+      const oreTypeName = def.typeName || (e.grade_cu >= 1.5 ? 'Богатая руда' : (e.grade_cu >= 1.0 ? 'Рядовая руда' : 'Бедная руда'));
+
+      const assignedTrucks = data.trucks ? data.trucks.filter(t => t.assigned_excavator === e.id).length : 2;
+      const share = [0.28, 0.26, 0.22, 0.16, 0.08][idx] || 0.2;
+      const tonnes = Math.round(kpi.crusher_total_tonnes * share).toLocaleString();
+
+      rowsHtml += `
+        <tr>
+          <td><strong>${def.name || 'Забой ' + (idx + 1)}</strong></td>
+          <td>+${def.elev || 420} м</td>
+          <td><span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:${oreColor}; margin-right:6px;"></span>${oreTypeName}</td>
+          <td style="color:${oreColor}; font-weight:700;">${e.grade_cu ? e.grade_cu.toFixed(2) : '1.05'} % Cu</td>
+          <td>${e.id.toUpperCase()}</td>
+          <td>${statusBadge}</td>
+          <td>${assignedTrucks} ед.</td>
+          <td><strong>${tonnes} т</strong></td>
+        </tr>
+      `;
+    });
+    tbody.innerHTML = rowsHtml;
+  }
+}
+
+function setupAnalyticsModalHandlers() {
+  const modal = document.getElementById("analytics-modal");
+  const btnOpenHeader = document.getElementById("btn-open-analytics");
+  const btnOpenCard = document.getElementById("link-open-analytics-card");
+  const btnClose = document.getElementById("btn-close-analytics");
+  const backdrop = document.getElementById("analytics-backdrop");
+  const btnExport = document.getElementById("btn-export-csv");
+
+  function openModal() {
+    if (!modal) return;
+    modal.classList.remove("hidden");
+    setTimeout(() => {
+      if (dashBlendChartInstance) dashBlendChartInstance.resize();
+      if (dashOreBalanceChartInstance) dashOreBalanceChartInstance.resize();
+      if (dashExcavatorChartInstance) dashExcavatorChartInstance.resize();
+      if (dashCycleChartInstance) dashCycleChartInstance.resize();
+    }, 60);
+  }
+
+  function closeModal() {
+    if (!modal) return;
+    modal.classList.add("hidden");
+  }
+
+  if (btnOpenHeader) btnOpenHeader.addEventListener("click", openModal);
+  if (btnOpenCard) btnOpenCard.addEventListener("click", openModal);
+  if (btnClose) btnClose.addEventListener("click", closeModal);
+  if (backdrop) backdrop.addEventListener("click", closeModal);
+
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && modal && !modal.classList.contains("hidden")) {
+      closeModal();
+    }
+  });
+
+  if (btnExport) {
+    btnExport.addEventListener("click", exportShiftAnalyticsCSV);
+  }
+
+  // Auto-open modal if requested via URL param ?analytics
+  if (window.location.search.includes("analytics")) {
+    setTimeout(openModal, 600);
+  }
+}
+
+function exportShiftAnalyticsCSV() {
+  if (!cachedFleetState) return;
+  const data = cachedFleetState;
+  const kpi = data.kpi;
+  let csv = "\uFEFF"; // UTF-8 BOM
+  csv += "Параметр;Значение;Ед. изм.\n";
+  csv += `Время формирования отчёта;${new Date().toLocaleString()};-\n`;
+  csv += `Режим диспетчеризации;${data.scenarios?.dispatch_mode || 'QUALITY_BLEND'};-\n`;
+  csv += `Текущее содержание Cu в шихте;${kpi.crusher_grade_cu.toFixed(3)};% Cu\n`;
+  csv += `Технологическая уставка Cu;1.050;% Cu\n`;
+  csv += `Общая добыча за смену;${kpi.crusher_total_tonnes};тонн\n`;
+  csv += `Текущая производительность;${kpi.crusher_rolling_tph.toFixed(0)};т/час\n`;
+  csv += `Парк БелАЗ-75131 в строю;${kpi.active_trucks};ед.\n`;
+  csv += `Очередь у приёмного бункера;${kpi.queued_trucks};ед.\n`;
+  csv += `\nЗабой;Горизонт;Сорт руды;Качество (% Cu);Экскаватор;Статус;Самосвалов;Отгружено (т)\n`;
+
+  data.excavators.forEach((e, idx) => {
+    const def = ORE_BLOCKS_DEF[e.block_id] || {};
+    const oreTypeName = def.typeName || 'Рядовая руда';
+    const assignedTrucks = data.trucks ? data.trucks.filter(t => t.assigned_excavator === e.id).length : 2;
+    const share = [0.28, 0.26, 0.22, 0.16, 0.08][idx] || 0.2;
+    const tonnes = Math.round(kpi.crusher_total_tonnes * share);
+    csv += `${def.name || 'Забой ' + (idx + 1)};+${def.elev || 420}м;${oreTypeName};${e.grade_cu.toFixed(2)};${e.id.toUpperCase()};${e.state};${assignedTrucks};${tonnes}\n`;
+  });
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.setAttribute("href", url);
+  link.setAttribute("download", `digital_twin_shift_report_${Date.now()}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
 // --- 10. Fetch Telemetry Loop & UI Sync ---
 async function fetchFleetTelemetry() {
   try {
@@ -1786,6 +2285,9 @@ function renderTelemetry(data) {
 
   // Update chart
   updateChart(cuGrade);
+
+  // Update real-time analytics dashboard
+  updateAnalyticsDashboard(data);
 
   // Re-render selected entity if open
   if (selectedEntity) {
@@ -1983,8 +2485,10 @@ function setupScenarioButtons() {
 window.addEventListener("DOMContentLoaded", () => {
   init3D();
   initChart();
+  initAnalyticsDashboard();
   setupToolbarHandlers();
   setupScenarioButtons();
+  setupAnalyticsModalHandlers();
   fetchFleetTelemetry();
   setInterval(fetchFleetTelemetry, 600);
 });

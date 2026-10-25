@@ -39,6 +39,10 @@
         <span class="label">Время смены:</span>
         <span id="sim-time" class="mono">00:00:00</span>
       </div>
+      <button id="btn-open-analytics" class="btn-analytics-header" title="Открыть аналитический дашборд смены и качества шихтовки">
+        <span class="btn-icon">📊</span>
+        <span>Аналитический дашборд</span>
+      </button>
     </div>
   </header>
 
@@ -258,25 +262,179 @@
           </div>
         </div>
 
-        <!-- Links to Platform Services -->
+        <!-- Links to Platform Services & Analytics -->
         <div class="inspector-card mt-3 links-card">
-          <h4>Сервисы платформы OpenEgiz</h4>
-          <a href="http://localhost:3000" target="_blank" class="service-link">
-            <span>📊 Аналитические дашборды Grafana (Порт 3000)</span>
+          <h4>Сервисы аналитики и платформы</h4>
+          <button id="link-open-analytics-card" class="service-link-btn" title="Открыть встроенный аналитический дашборд смены">
+            <span>📊 Аналитический дашборд (Встроенный)</span>
+            <span class="arrow">↗</span>
+          </button>
+          <a href="http://localhost:3000" target="_blank" class="service-link" title="Внешний сервер Grafana (требует запуска Docker)">
+            <span>📈 Внешняя Grafana (Порт 3000, Docker)</span>
             <span class="arrow">↗</span>
           </a>
-          <a href="http://localhost:8080/api/2/things" target="_blank" class="service-link">
-            <span>🌐 API цифровых двойников Eclipse Ditto (Порт 8080)</span>
-            <span class="arrow">↗</span>
-          </a>
-          <a href="http://localhost:8000/docs" target="_blank" class="service-link">
-            <span>⚙️ Swagger API симулятора и What-If (Порт 8000)</span>
+          <a href="http://localhost:8000/docs" target="_blank" class="service-link" title="Интерактивная документация REST API">
+            <span>⚙️ Swagger API симулятора (Порт 8000)</span>
             <span class="arrow">↗</span>
           </a>
         </div>
       </div>
     </aside>
   </main>
+
+  <!-- Interactive Analytics Dashboard Modal -->
+  <div id="analytics-modal" class="analytics-modal hidden">
+    <div class="analytics-backdrop" id="analytics-backdrop"></div>
+    <div class="analytics-container">
+      <div class="analytics-header">
+        <div class="analytics-title-box">
+          <div class="analytics-logo">📊</div>
+          <div>
+            <h2>Аналитический дашборд смены и качества шихтовки</h2>
+            <p>Цифровой двойник карьера OpenEgiz • Геопространственный контроль обогатительной фабрики</p>
+          </div>
+        </div>
+        <div class="analytics-header-actions">
+          <div class="analytics-live-tag">
+            <span class="pulse-dot"></span>
+            <span>ОБНОВЛЕНИЕ ТЕЛЕМЕТРИИ • 600мс</span>
+          </div>
+          <button id="btn-export-csv" class="btn-export" title="Выгрузить данные смены в формате CSV">📥 Экспорт CSV</button>
+          <button id="btn-close-analytics" class="btn-modal-close" title="Закрыть дашборд [ESC]">✕</button>
+        </div>
+      </div>
+
+      <div class="analytics-body">
+        <!-- Row 1: Key Performance Metrics -->
+        <div class="analytics-kpi-grid">
+          <div class="analytics-card kpi-card">
+            <span class="kpi-label">Качество шихты в бункере</span>
+            <div class="kpi-value-box">
+              <span id="dash-cu-grade" class="kpi-num">1.05</span>
+              <span class="kpi-unit">% Cu</span>
+            </div>
+            <span id="dash-cu-status" class="kpi-sub highlight-good">Норма: 1.05 ± 0.05% Cu</span>
+          </div>
+
+          <div class="analytics-card kpi-card">
+            <span class="kpi-label">Добыча на фабрику за смену</span>
+            <div class="kpi-value-box">
+              <span id="dash-total-tonnes" class="kpi-num">20 630</span>
+              <span class="kpi-unit">т</span>
+            </div>
+            <span id="dash-plan-pct" class="kpi-sub">План смены: 25 000 т (82.5%)</span>
+          </div>
+
+          <div class="analytics-card kpi-card">
+            <span class="kpi-label">Текущая производительность</span>
+            <div class="kpi-value-box">
+              <span id="dash-rolling-tph" class="kpi-num">3 400</span>
+              <span class="kpi-unit">т/час</span>
+            </div>
+            <span class="kpi-sub">Нагрузка ДК-01: 85% номинала</span>
+          </div>
+
+          <div class="analytics-card kpi-card">
+            <span class="kpi-label">КТГ автопарка БелАЗ</span>
+            <div class="kpi-value-box">
+              <span id="dash-fleet-ktg" class="kpi-num">95.8</span>
+              <span class="kpi-unit">%</span>
+            </div>
+            <span class="kpi-sub">12 единиц БелАЗ-75131 в строю</span>
+          </div>
+
+          <div class="analytics-card kpi-card">
+            <span class="kpi-label">Средний цикл рейса</span>
+            <div class="kpi-value-box">
+              <span id="dash-avg-cycle" class="kpi-num">18.4</span>
+              <span class="kpi-unit">мин</span>
+            </div>
+            <span class="kpi-sub">Плечо откатки: 2.4 км</span>
+          </div>
+        </div>
+
+        <!-- Row 2: Charts Grid -->
+        <div class="analytics-charts-grid">
+          <!-- Chart 1: Blend Grade Trend with Technological Corridor -->
+          <div class="analytics-card chart-large">
+            <div class="chart-header">
+              <h3>📈 Динамика содержания Cu в приёмном бункере дробилки</h3>
+              <span class="chart-tag">Технологический коридор фабрики: 1.00% – 1.10% Cu</span>
+            </div>
+            <div class="chart-canvas-box">
+              <canvas id="dashBlendChart"></canvas>
+            </div>
+          </div>
+
+          <!-- Chart 2: Ore Balance by Grade -->
+          <div class="analytics-card chart-medium">
+            <div class="chart-header">
+              <h3>⚖️ Структура добычи по сортам руды</h3>
+              <span class="chart-tag">Шихтовочный баланс</span>
+            </div>
+            <div class="chart-canvas-box">
+              <canvas id="dashOreBalanceChart"></canvas>
+            </div>
+          </div>
+
+          <!-- Chart 3: Excavator Productivity -->
+          <div class="analytics-card chart-medium">
+            <div class="chart-header">
+              <h3>🚜 Производительность экскаваторов</h3>
+              <span class="chart-tag">Фактическая отгрузка (тонн)</span>
+            </div>
+            <div class="chart-canvas-box">
+              <canvas id="dashExcavatorChart"></canvas>
+            </div>
+          </div>
+
+          <!-- Chart 4: Truck Cycle Time Breakdown -->
+          <div class="analytics-card chart-medium">
+            <div class="chart-header">
+              <h3>🚛 Структура рейса БелАЗ-75131</h3>
+              <span class="chart-tag">Распределение времени цикла</span>
+            </div>
+            <div class="chart-canvas-box">
+              <canvas id="dashCycleChart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 3: Active Mining Faces & Loading Status Table -->
+        <div class="analytics-card table-card">
+          <div class="chart-header">
+            <h3>📋 Сводная ведомость отработки забоев карьера</h3>
+            <span class="chart-tag">Текущие балансовые запасы и прикреплённая техника</span>
+          </div>
+          <div class="table-responsive">
+            <table class="analytics-table">
+              <thead>
+                <tr>
+                  <th>Забой</th>
+                  <th>Горизонт</th>
+                  <th>Сорт руды</th>
+                  <th>Содержание Cu</th>
+                  <th>Экскаватор</th>
+                  <th>Статус</th>
+                  <th>Самосвалы в рейсе</th>
+                  <th>Отгружено</th>
+                </tr>
+              </thead>
+              <tbody id="dash-table-body">
+                <!-- Dynamically populated via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Row 4: Service status note -->
+        <div class="service-note-box">
+          <span class="note-icon">💡</span>
+          <span>Встроенный дашборд цифрового двойника работает автономно в браузере. Внешний контейнер Grafana (порт 3000) можно запустить дополнительно через Docker при необходимости.</span>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>
